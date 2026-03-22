@@ -1,0 +1,27 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ~/.kore:/root/.kore
+    tmpfs:
+      - /tmp
+    ports:
+      - "8000:8000"
+    command: gateway
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ui
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - gateway
+    command: nginx -g 'daemon off;'
+    restart: unless-stopped

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useToast } from '../components/Toast.jsx'
 
 function SkillCard({ name, emoji, description, always_on, required_tools, required_bins, required_env, active, missing }) {
@@ -31,13 +31,13 @@ function SkillCard({ name, emoji, description, always_on, required_tools, requir
   )
 }
 
-function SkillSection({ title, skills }) {
+function SkillSection({ title, skills, emptyMessage }) {
   return (
     <div className="skill-section">
       <div className="card-title">{title} · {skills.length}</div>
       {skills.length === 0 ? (
         <div className="skill-empty">
-          Drop a SKILL.md into ~/.kore/data/skills/ to add your own
+          {emptyMessage}
         </div>
       ) : (
         <div className="agents-grid">
@@ -52,13 +52,14 @@ export default function Skills() {
   const [data, setData] = useState(null)
   const { showToast } = useToast()
 
-  const load = () =>
+  const load = useCallback(() => {
     fetch('/api/skills')
       .then(r => r.json())
       .then(setData)
       .catch(e => showToast(e.message || 'Failed to load skills', 'error'))
+  }, [showToast])
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [load])
 
   return (
     <>
@@ -78,8 +79,8 @@ export default function Skills() {
         <div className="loading">Loading…</div>
       ) : (
         <>
-          <SkillSection title="Built-in" skills={data.builtin} />
-          <SkillSection title="Workspace" skills={data.user} />
+          <SkillSection title="Built-in" skills={data.builtin} emptyMessage="No built-in skills found" />
+          <SkillSection title="Workspace" skills={data.user} emptyMessage="Drop a SKILL.md into ~/.kore/data/skills/ to add your own" />
         </>
       )}
     </>

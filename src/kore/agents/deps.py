@@ -24,3 +24,4 @@ class KoreDeps:
     core_memory: Any = field(default=None)   # CoreMemory | None
     event_log: Any = field(default=None)     # EventLog | None
     retriever: Any = field(default=None)     # Retriever | None
+    skill_registry: Any = field(default=None)  # SkillRegistry | None

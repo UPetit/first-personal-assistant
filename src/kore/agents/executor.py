@@ -43,6 +43,10 @@ def create_executor(
         import kore.tools.cron_tools  # noqa: F401
     except ImportError:
         pass
+    try:
+        import kore.tools.skill_tools  # noqa: F401
+    except ImportError:
+        pass
     tools = get_tools(exec_cfg.tools)
 
     # Inject skill context into system prompt

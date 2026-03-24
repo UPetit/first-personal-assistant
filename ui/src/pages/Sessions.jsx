@@ -100,11 +100,26 @@ function TraceBlock({ runEvents }) {
   )
 }
 
-function Timeline({ turns, runs }) {
+function Timeline({ turns, runs, scrollContainerRef }) {
   const bottomRef = useRef(null)
+  const userScrolledUp = useRef(false)
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = scrollContainerRef?.current
+    if (!container) return
+    const onScroll = () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+      userScrolledUp.current = !atBottom
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [scrollContainerRef])
+
+  useEffect(() => {
+    if (turns.length === 0) userScrolledUp.current = false
+    if (!userScrolledUp.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [turns, runs])
 
   if (turns.length === 0 && runs.length === 0) {
@@ -166,6 +181,7 @@ export default function Sessions() {
   const [selectedId, setSelectedId] = useState(null)
   const [sessionData, setSessionData] = useState(null)
   const [traceEvents, setTraceEvents] = useState([])
+  const scrollContainerRef = useRef(null)
 
   useEffect(() => {
     fetch('/api/sessions').then(r => r.json()).then(setSessions).catch(() => {})
@@ -264,8 +280,8 @@ export default function Sessions() {
             </div>
           )}
           {selectedId && (
-            <div className="sessions-scroll">
-              <Timeline turns={turns} runs={runs} />
+            <div className="sessions-scroll" ref={scrollContainerRef}>
+              <Timeline turns={turns} runs={runs} scrollContainerRef={scrollContainerRef} />
             </div>
           )}
         </div>

@@ -54,7 +54,7 @@ async def test_orchestrator_runs_post_extraction(
     executor = _make_executor("done")
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     engine = create_engine(tmp_path / "test.db")
     await setup_schema(engine)
@@ -114,7 +114,7 @@ async def test_orchestrator_injects_core_memory_in_prompt(
     executor = _make_executor("done")
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     engine = create_engine(tmp_path / "test.db")
     await setup_schema(engine)

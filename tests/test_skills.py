@@ -515,3 +515,134 @@ async def test_clawhub_install_zipslip_prevented(tmp_path):
     assert not (tmp_path.parent / "evil.txt").exists()
     # The SKILL.md should still be extracted correctly
     assert (skill_dir / "SKILL.md").exists()
+
+
+# ── skill_tools tests ─────────────────────────────────────────────────────────
+
+def _make_skill_deps(tmp_path, config_override=None):
+    """Build a KoreDeps with a real SkillRegistry pointing at tmp_path."""
+    from types import SimpleNamespace
+    from pydantic import SecretStr
+    from kore.agents.deps import KoreDeps
+    from kore.config import KoreConfig, LLMConfig, LLMProviderConfig, SkillsConfig
+    from kore.skills.registry import SkillRegistry
+
+    cfg = KoreConfig(
+        version="1.0.0",
+        llm=LLMConfig(providers={"anthropic": LLMProviderConfig(api_key=SecretStr("key"))}),
+        skills=SkillsConfig(clawhub_base_url="https://clawhub.dev/api/v1"),
+    )
+    registry = SkillRegistry(builtin_dir=tmp_path / "builtin", user_dir=tmp_path / "user")
+    deps = KoreDeps(config=cfg, skill_registry=registry)
+    return SimpleNamespace(deps=deps)
+
+
+@pytest.mark.asyncio
+async def test_skill_search_returns_results(tmp_path):
+    """skill_search returns formatted list from ClawHub."""
+    from kore.tools.skill_tools import skill_search
+
+    ctx = _make_skill_deps(tmp_path)
+    base = ctx.deps.config.skills.clawhub_base_url
+
+    with respx.mock:
+        respx.get(f"{base}/skills/search").mock(
+            return_value=httpx.Response(
+                200,
+                json={"results": [
+                    {"name": "git-manager", "description": "Manage git repos", "download_url": f"{base}/skills/git-manager/download"},
+                ]},
+            )
+        )
+        result = await skill_search(ctx, "git")
+
+    assert "git-manager" in result
+    assert "Manage git repos" in result
+
+
+@pytest.mark.asyncio
+async def test_skill_search_empty(tmp_path):
+    """skill_search reports no results gracefully."""
+    from kore.tools.skill_tools import skill_search
+
+    ctx = _make_skill_deps(tmp_path)
+    base = ctx.deps.config.skills.clawhub_base_url
+
+    with respx.mock:
+        respx.get(f"{base}/skills/search").mock(
+            return_value=httpx.Response(200, json={"results": []})
+        )
+        result = await skill_search(ctx, "nonexistent")
+
+    assert "No skills found" in result
+
+
+@pytest.mark.asyncio
+async def test_skill_install_places_in_user_dir_and_reloads(tmp_path):
+    """skill_install downloads to user_dir and hot-reloads the registry."""
+    from kore.tools.skill_tools import skill_install
+
+    ctx = _make_skill_deps(tmp_path)
+    base = ctx.deps.config.skills.clawhub_base_url
+    registry = ctx.deps.skill_registry
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("SKILL.md", '---\nname: git-manager\ndescription: Manage git\nmetadata: \'{"kore":{"always":false,"requires":{}}}\'\n---\n# Git')
+    zip_bytes = buf.getvalue()
+
+    with respx.mock:
+        respx.get(f"{base}/skills/search").mock(
+            return_value=httpx.Response(
+                200,
+                json={"results": [{"name": "git-manager", "description": "Manage git repos",
+                                   "download_url": f"{base}/skills/git-manager/download"}]},
+            )
+        )
+        respx.get(f"{base}/skills/git-manager/download").mock(
+            return_value=httpx.Response(200, content=zip_bytes)
+        )
+        result = await skill_install(ctx, "git-manager")
+
+    assert "git-manager" in result
+    assert "reloaded" in result
+    # Installed into user_dir
+    assert (registry.user_dir / "git-manager").exists()
+    # Registry picked up the new skill after reload
+    assert any(s.name == "git-manager" for s in registry.all_skills())
+
+
+@pytest.mark.asyncio
+async def test_skill_install_not_found(tmp_path):
+    """skill_install returns error message when skill not on ClawHub."""
+    from kore.tools.skill_tools import skill_install
+
+    ctx = _make_skill_deps(tmp_path)
+    base = ctx.deps.config.skills.clawhub_base_url
+
+    with respx.mock:
+        respx.get(f"{base}/skills/search").mock(
+            return_value=httpx.Response(200, json={"results": []})
+        )
+        result = await skill_install(ctx, "ghost-skill")
+
+    assert "Install failed" in result
+
+
+@pytest.mark.asyncio
+async def test_skill_install_no_registry(tmp_path):
+    """skill_install returns graceful error when registry is not available."""
+    from types import SimpleNamespace
+    from pydantic import SecretStr
+    from kore.agents.deps import KoreDeps
+    from kore.config import KoreConfig, LLMConfig, LLMProviderConfig
+    from kore.tools.skill_tools import skill_install
+
+    cfg = KoreConfig(
+        version="1.0.0",
+        llm=LLMConfig(providers={"anthropic": LLMProviderConfig(api_key=SecretStr("key"))}),
+    )
+    ctx = SimpleNamespace(deps=KoreDeps(config=cfg, skill_registry=None))
+    result = await skill_install(ctx, "any-skill")
+
+    assert "not available" in result

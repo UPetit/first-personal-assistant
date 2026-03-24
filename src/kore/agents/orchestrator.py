@@ -38,6 +38,7 @@ class Orchestrator:
         retriever=None,
         extraction_agent=None,
         trace_store: TraceStore | None = None,
+        skill_registry=None,  # SkillRegistry | None
     ) -> None:
         if config.agents.planner is None:
             raise ConfigError(
@@ -51,6 +52,7 @@ class Orchestrator:
         self._retriever = retriever
         self._extraction_agent = extraction_agent
         self._store = trace_store
+        self._skill_registry = skill_registry
 
     async def _emit(self, event: dict) -> None:
         """Persist a trace event if a TraceStore is configured."""
@@ -74,6 +76,7 @@ class Orchestrator:
                 core_memory=self._core_memory,
                 event_log=self._event_log,
                 retriever=self._retriever,
+                skill_registry=self._skill_registry,
             )
 
             # 1. Plan — conversation history passed only to planner
@@ -206,5 +209,7 @@ class Orchestrator:
 
     def _get_executor(self, name: str) -> BaseAgent:
         if name not in self._executors:
-            self._executors[name] = create_executor(name, self._config)
+            self._executors[name] = create_executor(
+                name, self._config, skill_registry=self._skill_registry
+            )
         return self._executors[name]

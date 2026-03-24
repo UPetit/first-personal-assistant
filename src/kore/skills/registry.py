@@ -33,6 +33,11 @@ class SkillRegistry:
                 meta = parse_skill_md(skill_md)
                 self._skills[meta.name] = meta
 
+    @property
+    def user_dir(self) -> Path:
+        """Directory where user and ClawHub-installed skills live."""
+        return self._user_dir
+
     def reload(self) -> None:
         """Re-scan skill directories. Call after installing a new skill."""
         self.load_all()

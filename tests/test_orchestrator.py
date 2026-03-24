@@ -45,7 +45,7 @@ async def test_full_pipeline(kore_home, sample_config_with_agents, monkeypatch):
     executor = _make_executor("final answer")
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(sample_config_with_agents)
     session_id = str(uuid4())
@@ -77,7 +77,7 @@ async def test_feed_forward_context(kore_home, sample_config_with_agents, monkey
     executor.run = recording_run  # type: ignore[method-assign]
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(sample_config_with_agents)
     await orch.run("research and write", str(uuid4()))
@@ -95,7 +95,7 @@ async def test_orchestrator_passes_kore_deps_to_executor(kore_home, sample_confi
     executor = _make_executor("result")
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(sample_config_with_agents)
     await orch.run("test", str(uuid4()))
@@ -113,7 +113,7 @@ async def test_unknown_executor_fallback(
     planner = _make_planner([{"executor": "nonexistent", "instruction": "do it"}])
     executor = _make_executor("general fallback result")
 
-    def fake_create_executor(name: str, config: object) -> BaseAgent:
+    def fake_create_executor(name: str, config: object, **kwargs: object) -> BaseAgent:
         assert name == "general"   # must fall back to general
         return executor
 
@@ -176,7 +176,7 @@ async def test_executors_receive_no_history(
     executor.run = recording_run  # type: ignore[method-assign]
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(sample_config_with_agents)
     await orch.run("do something", str(uuid4()))

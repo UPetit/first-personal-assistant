@@ -119,6 +119,31 @@ def test_parse_skill_md_malformed_metadata(tmp_path):
     assert meta.required_tools == []
 
 
+def test_parse_skill_md_extracts_emoji(tmp_path):
+    from kore.skills.loader import parse_skill_md
+
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        '---\nname: my-skill\ndescription: A skill\n'
+        'metadata: \'{"kore":{"emoji":"🔥","always":false,"requires":{}}}\'\n---\n# Body\n'
+    )
+    meta = parse_skill_md(skill_dir / "SKILL.md")
+    assert meta.emoji == "🔥"
+
+
+def test_parse_skill_md_emoji_defaults_to_sparkle(tmp_path):
+    from kore.skills.loader import parse_skill_md
+
+    skill_dir = tmp_path / "no-emoji"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        '---\nname: no-emoji\ndescription: A skill\n---\n# Body\n'
+    )
+    meta = parse_skill_md(skill_dir / "SKILL.md")
+    assert meta.emoji == "✦"
+
+
 # ── registry tests ────────────────────────────────────────────────────────────
 
 def test_registry_discovers_builtin_skills(tmp_path):

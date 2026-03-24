@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import shutil
 from typing import Any
 from uuid import uuid4
 
@@ -102,9 +104,6 @@ async def get_agents(request: Request) -> dict[str, Any]:
 
 @router.get("/skills")
 async def get_skills(request: Request) -> dict[str, Any]:
-    import os
-    import shutil as _shutil
-
     registry = request.app.state.skill_registry
     if registry is None:
         return {"builtin": [], "user": []}
@@ -116,7 +115,7 @@ async def get_skills(request: Request) -> dict[str, Any]:
 
     for skill in registry.all_skills():
         missing = [
-            b for b in skill.required_bins if not _shutil.which(b)
+            b for b in skill.required_bins if not shutil.which(b)
         ] + [
             e for e in skill.required_env if not os.environ.get(e)
         ]

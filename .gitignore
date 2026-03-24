@@ -6,7 +6,6 @@ build/
 .env
 .venv/
 venv/
-uv.lock
 .pytest_cache/
 .mypy_cache/
 

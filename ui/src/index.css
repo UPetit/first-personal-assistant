@@ -325,6 +325,27 @@ body {
 .agent-activity { margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 11px; display: flex; align-items: center; gap: 7px; color: #4ade80; }
 .activity-dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 5px #4ade80; flex-shrink: 0; animation: pulse-ring-green 1.5s ease-out infinite; }
 
+/* ── Skills page ── */
+.skill-card-warn { border-color: rgba(251,191,36,0.25) !important; }
+.skill-card-warn:hover { border-color: rgba(251,191,36,0.4) !important; }
+.always-tag {
+  font-size: 8px; padding: 2px 7px; border-radius: 4px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  background: rgba(34,211,238,0.1); color: #22d3ee;
+  border: 1px solid rgba(34,211,238,0.18);
+}
+.skill-missing {
+  margin-top: 8px; font-size: 10px;
+  color: #fbbf24; background: rgba(251,191,36,0.07);
+  border: 1px solid rgba(251,191,36,0.15);
+  border-radius: 5px; padding: 4px 8px;
+}
+.skill-empty {
+  color: rgba(255,255,255,0.2); font-size: 11px;
+  font-style: italic; padding: 12px 0;
+}
+.skill-section { margin-bottom: 24px; }
+
 /* ── Jobs page ── */
 .jobs-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
 .add-btn {

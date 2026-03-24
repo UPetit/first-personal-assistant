@@ -98,6 +98,47 @@ async def get_agents(request: Request) -> dict[str, Any]:
     return {"planner": planner, "executors": executors}
 
 
+# ── /api/skills ───────────────────────────────────────────────────────────────
+
+@router.get("/skills")
+async def get_skills(request: Request) -> dict[str, Any]:
+    import os
+    import shutil as _shutil
+
+    registry = request.app.state.skill_registry
+    if registry is None:
+        return {"builtin": [], "user": []}
+
+    registry.reload()
+
+    builtin: list[dict] = []
+    user: list[dict] = []
+
+    for skill in registry.all_skills():
+        missing = [
+            b for b in skill.required_bins if not _shutil.which(b)
+        ] + [
+            e for e in skill.required_env if not os.environ.get(e)
+        ]
+        info: dict[str, Any] = {
+            "name": skill.name,
+            "description": skill.description,
+            "emoji": skill.emoji,
+            "always_on": skill.always_on,
+            "required_tools": skill.required_tools,
+            "required_bins": skill.required_bins,
+            "required_env": skill.required_env,
+            "active": len(missing) == 0,
+            "missing": missing,
+        }
+        if skill.path.is_relative_to(registry.user_dir):
+            user.append(info)
+        else:
+            builtin.append(info)
+
+    return {"builtin": builtin, "user": user}
+
+
 # ── /api/memory ───────────────────────────────────────────────────────────────
 
 @router.get("/memory")

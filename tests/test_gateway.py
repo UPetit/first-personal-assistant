@@ -533,3 +533,47 @@ async def test_get_skills_tool_deps_do_not_affect_active(tmp_path):
     skill = r.json()["builtin"][0]
     assert skill["active"] is True
     assert skill["required_tools"] == ["web_search", "scrape_url"]
+
+
+@pytest.mark.asyncio
+async def test_get_skills_active_false_when_env_missing(tmp_path, monkeypatch):
+    """active=False and missing=[env] when a required env var is absent."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin_dir = tmp_path / "builtin"
+    builtin_dir.mkdir()
+    (builtin_dir / "needs-env").mkdir()
+    (builtin_dir / "needs-env" / "SKILL.md").write_text(
+        '---\nname: needs-env\ndescription: Needs an env var\n'
+        'metadata: \'{"kore":{"emoji":"🔑","always":false,"requires":{"env":["__NONEXISTENT_ENV_VAR__"]}}}\'\n---\n# Body\n'
+    )
+
+    monkeypatch.delenv("__NONEXISTENT_ENV_VAR__", raising=False)
+
+    registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=tmp_path / "user")
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/skills")
+    skill = r.json()["builtin"][0]
+    assert skill["active"] is False
+    assert "__NONEXISTENT_ENV_VAR__" in skill["missing"]
+
+
+@pytest.mark.asyncio
+async def test_get_skills_calls_reload_on_each_request():
+    """GET /api/skills calls registry.reload() on every request."""
+    from kore.skills.registry import SkillRegistry
+
+    # Use a real registry but spy on reload
+    registry = MagicMock(spec=SkillRegistry)
+    registry.all_skills.return_value = []
+    registry.user_dir = "/nonexistent"
+
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.get("/api/skills")
+        await c.get("/api/skills")
+
+    assert registry.reload.call_count == 2

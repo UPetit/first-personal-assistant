@@ -14,6 +14,9 @@ from kore.scheduler.cron import KoreCronScheduler
 from kore.tools import cron_tools
 from kore.agents.orchestrator import Orchestrator
 from kore.channels.base import Channel, Message
+from kore.skills.registry import SkillRegistry
+
+_PROJECT_ROOT = Path(__file__).parents[2]
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +69,17 @@ async def main() -> None:
     cron_tools.init(scheduler)
     scheduler.start()
 
+    # Build skill registry
+    builtin_dir = _PROJECT_ROOT / config.skills.builtin_dir
+    user_dir = (
+        Path(config.skills.user_dir)
+        if config.skills.user_dir
+        else KORE_HOME / "data" / "skills"
+    )
+    skill_registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=user_dir)
+
     # Build orchestrator
-    raw_orchestrator = Orchestrator(config, trace_store=trace_store)
+    raw_orchestrator = Orchestrator(config, trace_store=trace_store, skill_registry=skill_registry)
     orchestrator = _OrchestratorAdapter(raw_orchestrator)
 
     # TODO: wire consolidation timer

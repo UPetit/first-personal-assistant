@@ -62,7 +62,7 @@ async def test_api_message_full_pipeline(kore_home, integration_config, monkeypa
     executor = _make_executor("full pipeline response")
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(integration_config)
 
@@ -86,7 +86,7 @@ async def test_api_message_session_persisted_to_disk(
     executor = _make_executor("saved response")
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(integration_config)
 
@@ -114,7 +114,7 @@ async def test_api_message_multi_turn_context(
     # AsyncMock is stateless — returns the same value on every call, safe for multi-turn tests
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(integration_config)
 
@@ -262,7 +262,7 @@ async def test_api_message_500_on_orchestrator_exception(
     executor.run = AsyncMock(side_effect=RuntimeError("simulated LLM failure"))
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     orch = Orchestrator(integration_config)
 
@@ -328,7 +328,7 @@ async def test_conversation_compaction_on_token_limit(
     executor = _make_executor("post-compaction response")
 
     monkeypatch.setattr("kore.agents.orchestrator.create_planner", lambda c: planner)
-    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c: executor)
+    monkeypatch.setattr("kore.agents.orchestrator.create_executor", lambda n, c, **kw: executor)
 
     # Mock the compactor so no real LLM call is made during compaction
     mock_compactor = MagicMock()

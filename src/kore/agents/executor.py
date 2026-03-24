@@ -43,13 +43,10 @@ def create_executor(
         import kore.tools.cron_tools  # noqa: F401
     except ImportError:
         pass
-    try:
-        import kore.tools.skill_tools  # noqa: F401
-    except ImportError:
-        pass
     tools = get_tools(exec_cfg.tools)
 
     # Inject skill context into system prompt
+    injected_skills: list[str] = []
     if skill_registry is not None and exec_cfg.skills:
         skills = skill_registry.get_skills_for_executor(
             exec_cfg.skills, available_tools=exec_cfg.tools
@@ -63,8 +60,9 @@ def create_executor(
                     f"\n\n## Always-Active Skill Instructions\n\n{level2}"
                 )
             prompt = prompt + skill_context
+            injected_skills = [s.name for s in skills]
 
-    return BaseAgent(
+    agent = BaseAgent(
         model,
         exec_cfg.model,
         prompt,
@@ -72,3 +70,5 @@ def create_executor(
         max_retries=exec_cfg.max_retries,
         max_tool_calls=config.security.max_tool_calls_per_request,
     )
+    agent.skills_loaded = injected_skills
+    return agent

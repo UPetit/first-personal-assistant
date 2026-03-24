@@ -119,6 +119,7 @@ class Orchestrator:
                     "step_index": step_index,
                     "executor_name": executor_name,
                     "model": executor_model.model if executor_model else "unknown",
+                    "skills_loaded": executor.skills_loaded,
                 })
 
                 instruction = f"{safe_instruction}\n\nContext from previous step:\n{context}"
@@ -127,12 +128,19 @@ class Orchestrator:
 
                 # Emit tool calls as a batch (pydantic-ai exposes them post-run)
                 for tc in last_response.tool_calls:
+                    # Detect Level 3 on-demand skill reads (read_file called on a SKILL.md path)
+                    skill_read: str | None = None
+                    if tc.name == "read_file":
+                        path_arg = str(tc.args.get("path", ""))
+                        if "SKILL.md" in path_arg:
+                            skill_read = path_arg
                     await self._emit({
                         "type": "tool_call",
                         "session_id": session_id,
                         "step_index": step_index,
                         "tool_name": tc.name,
                         "args": tc.args,
+                        **({"skill_read": skill_read} if skill_read else {}),
                     })
                     result_str = str(tc.result) if tc.result is not None else ""
                     await self._emit({

@@ -68,6 +68,7 @@ async def test_orchestrator_emits_events_in_correct_order(kore_home, tmp_path):
     ):
         mock_exec = MagicMock()
         mock_exec.run = AsyncMock(return_value=exec_response)
+        mock_exec.skills_loaded = []
         mock_get_exec.return_value = mock_exec
 
         await orch.run("hello", "test_session")
@@ -113,6 +114,7 @@ async def test_orchestrator_emits_tool_call_and_result_events(kore_home, tmp_pat
     ):
         mock_exec = MagicMock()
         mock_exec.run = AsyncMock(return_value=exec_response)
+        mock_exec.skills_loaded = []
         mock_get_exec.return_value = mock_exec
 
         await orch.run("search this", "test_session")
@@ -149,6 +151,7 @@ async def test_orchestrator_without_trace_store_emits_nothing(kore_home):
     ):
         mock_exec = MagicMock()
         mock_exec.run = AsyncMock(return_value=exec_response)
+        mock_exec.skills_loaded = []
         mock_get_exec.return_value = mock_exec
 
         # Must not raise

@@ -9,6 +9,13 @@ Add a Skills page to the Kore dashboard UI that displays built-in and workspace 
 
 ## Backend
 
+### Wiring changes required
+
+Two files need changes:
+
+1. `server.py` — `create_app()` gains a `skill_registry=None` parameter and stores it as `app.state.skill_registry`.
+2. `main.py` — the existing `create_app(...)` call gains `skill_registry=skill_registry` to pass the already-instantiated registry.
+
 ### New endpoint: `GET /api/skills`
 
 Added to `src/kore/gateway/routes_api.py`.
@@ -20,6 +27,8 @@ Added to `src/kore/gateway/routes_api.py`.
   "user": [SkillInfo]
 }
 ```
+
+If `app.state.skill_registry` is `None`, return `{"builtin": [], "user": []}`.
 
 **SkillInfo fields:**
 ```json
@@ -36,51 +45,66 @@ Added to `src/kore/gateway/routes_api.py`.
 }
 ```
 
-- `active`: `true` when all bin and env var dependencies are satisfied. Tool deps are informational only — tools are always available at runtime.
-- `missing`: list of unsatisfied bin/env deps (empty when `active: true`).
-- Skills are split by source: built-in (`skills/`) vs user/workspace (`~/.kore/workspace/skills/`).
+- `active`: `true` when all bin and env var dependencies are satisfied.
+  - Computed by calling `registry.check_dependencies(skill, available_tools=[])`. Passing an empty tools list means tool deps never block `active`; they are informational only.
+- `missing`: list of specific unsatisfied bin/env dep names (empty when `active: true`).
+  - `SkillRegistry.check_dependencies()` returns only a boolean; the missing list must be computed inline in the endpoint by iterating `skill.required_bins` (checking `shutil.which`) and `skill.required_env` (checking `os.environ.get`).
 
-**Wiring:**
-- `skill_registry` stored in `app.state` in `server.py` and passed from `main.py`.
-- The endpoint reads `registry.all_skills()`, splits by whether each skill's path is under the builtin dir, and runs `registry.check_dependencies()` per skill to compute `active` and `missing`.
+**Builtin vs user split:**
+Skills are split using `skill.path.is_relative_to(registry.user_dir)` (note: `skill.path` is the full path to the `SKILL.md` file). Skills under `user_dir` are `user`; all others are `builtin`. The actual user dir defaults to `~/.kore/data/skills/`.
+
+**Emoji fallback:**
+If a skill's metadata has no `emoji` field, use `"✦"` as the default.
+
+**Reload behaviour:**
+The endpoint calls `registry.reload()` on every request so the client's Reload button (which simply re-fetches) always sees current skill directory state. This is intentional: Kore runs single-worker asyncio, so there is no concurrency concern with mutating registry state on a read endpoint.
 
 ## Frontend
 
-### Navigation
+### `App.jsx` changes
 
-`Skills` added to `SYSTEM_NAV` in `App.jsx`:
-- Icon: `✦`
-- Route: `/skills`
-- Position: between Agents and Memory
+- Import `Skills` from `./pages/Skills.jsx`.
+- Add to `SYSTEM_NAV`: `{ to: '/skills', label: 'Skills', icon: '✦' }` — between Agents and Memory.
+- Add `<Route path="/skills" element={<Skills />} />` to the `<Routes>` block.
+- `ALL_NAV` (used by the bottom nav) is derived from `[...MAIN_NAV, ...SYSTEM_NAV]` so Skills appears there automatically.
 
 ### `Skills.jsx`
 
 - Fetches `GET /api/skills` on mount.
-- Reload button in page header re-fetches the same endpoint (no separate server-side reload needed — registry re-scans on each call).
+- Reload button in page header re-fetches the same endpoint.
 - Two sections rendered in order: **Built-in** then **Workspace**.
 - Each section uses a grid layout matching the Agents page (`.agents-grid`).
-- Empty workspace section renders a hint: `Drop a SKILL.md into ~/.kore/workspace/skills/ to add your own`.
+- Empty workspace section renders a hint: `Drop a SKILL.md into ~/.kore/data/skills/ to add your own`.
 
-### Skill card
+### Skill card (`SkillCard` component)
 
-Each skill is rendered as a card (`SkillCard` component) with:
+Each skill is rendered as a card with:
 - **Header:** emoji + name
 - **Description:** one-line text
 - **Tags row:** `always-on` badge (cyan), tool requirement tags (indigo), bin/env requirement tags (indigo)
-- **Warning row** (only when `active: false`): amber `⚠ missing: <dep>, <dep>` tag; card gets an amber border tint (`.skill-card-warn`)
+- **Warning row** (only when `active: false`): amber `⚠ missing: <dep>, <dep>` tag; card gets a subtle amber border tint (`.skill-card-warn`)
 
 ### CSS
 
 New styles added to `index.css`:
-- `.skill-section-header` — section label (reuses `.card-title` style)
 - `.skill-card-warn` — amber border variant of `.card`
 - `.skill-empty` — muted hint text for empty workspace section
 - `.always-tag` — cyan badge for always-on skills
 
 Reuses: `.card`, `.tool-tag`, `.agents-grid`, `.page-header`, `.page-title`, `.page-sub`, `.loading`.
 
+## Tests
+
+Per project convention, tests are mandatory alongside implementation. The following must be covered:
+
+- `GET /api/skills` returns correct `builtin`/`user` split
+- `active: false` and `missing` list computed correctly for a skill with an unsatisfied bin dep
+- `active: true` when all deps are met
+- Tool deps do not affect `active`
+- Returns `{"builtin": [], "user": []}` when `skill_registry` is `None`
+- `Skills.jsx`: renders loading state, skill cards, empty workspace hint, and warn card for inactive skill
+
 ## Constraints
 
 - No install/delete actions in this version — read-only view.
-- Dependency check for tools is skipped (tools are always available); only bins and env vars affect `active`.
-- The endpoint does not trigger a registry reload — it reads current state. The frontend Reload button simply re-fetches.
+- Dependency check for tools is informational only; only bins and env vars affect `active`.

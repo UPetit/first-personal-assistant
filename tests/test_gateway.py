@@ -320,6 +320,20 @@ async def test_create_app_with_orchestrator_state():
     assert app.state.orchestrator is mock_orch
 
 
+def test_create_app_stores_skill_registry_in_state():
+    """skill_registry passed to create_app() is accessible via app.state."""
+    from unittest.mock import MagicMock
+    registry = MagicMock()
+    app = _make_app(skill_registry=registry)
+    assert app.state.skill_registry is registry
+
+
+def test_create_app_skill_registry_defaults_to_none():
+    """create_app() without skill_registry sets app.state.skill_registry to None."""
+    app = _make_app()
+    assert app.state.skill_registry is None
+
+
 # ── exception sanitization ────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

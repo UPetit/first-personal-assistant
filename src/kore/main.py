@@ -118,6 +118,7 @@ async def main() -> None:
         orchestrator=raw_orchestrator,
         telegram_channel=telegram_channel,
         trace_store=trace_store,
+        skill_registry=skill_registry,
     )
 
     # Graceful shutdown

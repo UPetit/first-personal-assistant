@@ -61,8 +61,7 @@ _CONFIG_TEMPLATE = {
     },
     "scheduler": {
         "timezone": "UTC",
-        "jobs_file": "config/jobs.json",
-        "db_path": "data/kore.db",
+        "data_jobs_file": "data/jobs.json",
     },
     "memory": {
         "core": {"path": "data/core_memory.json", "max_tokens": 4000},
@@ -114,11 +113,12 @@ def cmd_init() -> None:
     print(f"Initialising Kore home at {home}")
 
     _mkdir(home)
+    _mkdir(home / "data")
     _mkdir(home / "workspace" / "skills")
     _mkdir(home / "workspace" / "files")
 
     _write_if_absent(home / "config.json", json.dumps(_CONFIG_TEMPLATE, indent=2))
-    _write_if_absent(home / "jobs.json", json.dumps(_JOBS_TEMPLATE, indent=2))
+    _write_if_absent(home / "data" / "jobs.json", json.dumps(_JOBS_TEMPLATE, indent=2))
     _write_if_absent(home / ".env.example", _ENV_EXAMPLE)
 
     print("\nDone. Next steps:")

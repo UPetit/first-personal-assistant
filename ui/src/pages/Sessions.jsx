@@ -134,8 +134,27 @@ function TraceBlock({ runEvents }) {
   )
 }
 
-function Timeline({ turns, runs }) {
+function Timeline({ turns, runs, scrollContainerRef }) {
   const bottomRef = useRef(null)
+  const userScrolledUp = useRef(false)
+
+  useEffect(() => {
+    const container = scrollContainerRef?.current
+    if (!container) return
+    const onScroll = () => {
+      const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+      userScrolledUp.current = !atBottom
+    }
+    container.addEventListener('scroll', onScroll, { passive: true })
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [scrollContainerRef])
+
+  useEffect(() => {
+    if (turns.length === 0) userScrolledUp.current = false
+    if (!userScrolledUp.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [turns, runs])
 
   if (turns.length === 0 && runs.length === 0) {
     return <div className="empty-state">No turns yet</div>
@@ -196,7 +215,7 @@ export default function Sessions() {
   const [selectedId, setSelectedId] = useState(null)
   const [sessionData, setSessionData] = useState(null)
   const [traceEvents, setTraceEvents] = useState([])
-  const scrollRef = useRef(null)
+  const scrollContainerRef = useRef(null)
 
   useEffect(() => {
     fetch('/api/sessions').then(r => r.json()).then(setSessions).catch(() => {})
@@ -296,12 +315,12 @@ export default function Sessions() {
           )}
           {selectedId && (
             <div className="sessions-scroll-wrap">
-              <div className="sessions-scroll" ref={scrollRef}>
-                <Timeline turns={turns} runs={runs} />
+              <div className="sessions-scroll" ref={scrollContainerRef}>
+                <Timeline turns={turns} runs={runs} scrollContainerRef={scrollContainerRef} />
               </div>
               <button
                 className="scroll-bottom-btn"
-                onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })}
+                onClick={() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })}
                 title="Scroll to bottom"
               >↓</button>
             </div>

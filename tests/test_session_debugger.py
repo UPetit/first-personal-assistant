@@ -77,19 +77,22 @@ async def test_orchestrator_emits_events_in_correct_order(kore_home, tmp_path):
     types = [e["type"] for e in events]
     assert types == [
         "session_start",
+        "plan_summary",
         "plan_result",
         "executor_start",
         "executor_done",
         "session_done",
     ]
     assert events[0]["message"] == "hello"
-    assert events[1]["step_index"] == 0
-    assert events[1]["executor"] == "general"
+    assert events[1]["intent"] == "test intent"
     assert events[1]["reasoning"] == "test reasoning"
     assert events[2]["step_index"] == 0
-    assert events[2]["executor_name"] == "general"
+    assert events[2]["executor"] == "general"
+    assert events[2]["reasoning"] == "test reasoning"
     assert events[3]["step_index"] == 0
-    assert events[4]["response"] == "hello"
+    assert events[3]["executor_name"] == "general"
+    assert events[4]["step_index"] == 0
+    assert events[5]["response"] == "hello"
 
 
 @pytest.mark.asyncio

@@ -34,6 +34,13 @@ def _build_executors_summary(config: KoreConfig) -> str:
     lines = [
         f"Valid executor names (use EXACTLY one of these): {names}",
         "",
+        "Tool-to-executor mapping (which executor to use when a task requires a given tool):",
+    ]
+    for name, cfg in config.agents.executors.items():
+        for tool in (cfg.tools or []):
+            lines.append(f"  {tool} → {name!r}")
+    lines += [
+        "",
         "Executor descriptions:",
     ]
     for name, cfg in config.agents.executors.items():

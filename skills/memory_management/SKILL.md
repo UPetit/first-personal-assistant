@@ -1,5 +1,5 @@
 ---
-name: memory-management
+name: memory_management
 description: When and how to store, update, and retrieve memories across conversations
 metadata: '{"kore":{"emoji":"🧠","always":true,"requires":{"tools":[]}}}'
 ---

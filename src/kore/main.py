@@ -16,7 +16,11 @@ from kore.agents.orchestrator import Orchestrator
 from kore.channels.base import Channel, Message
 from kore.skills.registry import SkillRegistry
 
-_PROJECT_ROOT = Path(__file__).parents[2]
+# In a non-editable install (Docker) __file__ points to site-packages, not /app.
+# Fall back to CWD which the Dockerfile sets to /app via WORKDIR.
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if not (_PROJECT_ROOT / "prompts").exists():
+    _PROJECT_ROOT = Path.cwd()
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +78,7 @@ async def main() -> None:
     user_dir = (
         Path(config.skills.user_dir)
         if config.skills.user_dir
-        else KORE_HOME / "data" / "skills"
+        else KORE_HOME / "workspace" / "skills"
     )
     skill_registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=user_dir)
 

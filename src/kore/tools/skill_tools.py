@@ -24,6 +24,26 @@ async def skill_search(ctx: RunContext[KoreDeps], query: str) -> str:
 register("skill_search", skill_search)
 
 
+async def read_skill(ctx: RunContext[KoreDeps], name: str) -> str:
+    """Read the full content of an installed skill by name.
+
+    Use this to get detailed instructions for a skill listed in the
+    Available Skills summary. Returns the full SKILL.md body.
+    """
+    registry = ctx.deps.skill_registry
+    if registry is None:
+        return "[Error: skill registry not available]"
+    skills = registry.all_skills()
+    skill = next((s for s in skills if s.name == name), None)
+    if skill is None:
+        available = [s.name for s in skills]
+        return f"[Error: skill '{name}' not found. Available: {available}]"
+    return f"[SKILL: {skill.name}]\n{skill.body}"
+
+
+register("read_skill", read_skill)
+
+
 async def skill_install(ctx: RunContext[KoreDeps], skill_name: str) -> str:
     """Install a skill from ClawHub into the user skill directory.
 

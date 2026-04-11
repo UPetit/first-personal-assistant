@@ -1,5 +1,5 @@
 ---
-name: skill-creator
+name: skill_creator
 description: Create new SKILL.md files in the correct format for Kore and ClawHub compatibility
 metadata: '{"kore":{"emoji":"🛠️","always":false,"requires":{"tools":["write_file"]}}}'
 ---
@@ -44,5 +44,5 @@ Metadata fields:
 1. Clarify the skill's name, purpose, required tools, and whether it should be always-on.
 2. Draft the frontmatter.
 3. Write the body using the structure above.
-4. Use `write_file` to save to `data/skills/<skill-name>/SKILL.md`.
+4. Use `write_file` to save to `workspace/skills/<skill-name>/SKILL.md`.
 5. Confirm with the user.

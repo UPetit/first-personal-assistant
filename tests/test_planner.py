@@ -34,7 +34,6 @@ def test_build_executors_summary(sample_config_with_agents):
     summary = _build_executors_summary(sample_config_with_agents)
     assert "general" in summary
     assert "search" in summary
-    assert "writer" in summary
     assert "Web research" in summary
 
 
@@ -75,19 +74,19 @@ async def test_planner_single_step(mock_deps):
 async def test_planner_multi_step(mock_deps):
     """Multi-step plan preserves step order."""
     model = TestModel(custom_output_args={
-        "intent": "research and write",
+        "intent": "research and summarize",
         "reasoning": "two steps needed",
         "steps": [
             {"executor": "search", "instruction": "find info"},
-            {"executor": "writer", "instruction": "write summary"},
+            {"executor": "general", "instruction": "summarize findings"},
         ],
     })
     agent = BaseAgent(model, "test:model", "you are a planner", output_type=PlanResult)
-    result = await agent.run("research and write about Python", deps=mock_deps)
+    result = await agent.run("research and summarize Python", deps=mock_deps)
     assert result.output is not None
     assert len(result.output.steps) == 2
     assert result.output.steps[0].executor == "search"
-    assert result.output.steps[1].executor == "writer"
+    assert result.output.steps[1].executor == "general"
 
 
 def test_executor_list_in_prompt(sample_config_with_agents):
@@ -96,8 +95,6 @@ def test_executor_list_in_prompt(sample_config_with_agents):
     summary = _build_executors_summary(sample_config_with_agents)
     assert "general" in summary
     assert "search" in summary
-    assert "writer" in summary
     # Each description should appear
     assert "Handles complex" in summary
     assert "Web research" in summary
-    assert "Writing" in summary

@@ -66,19 +66,15 @@ def sample_config_with_agents(sample_config):
             model="anthropic:claude-sonnet-4-6",
             prompt_file="general.md",
             tools=["web_search", "scrape_url", "read_file", "write_file", "get_current_time"],
+            skills=["*"],
             description="Handles complex or mixed tasks requiring multiple capabilities",
         ),
         "search": ExecutorConfig(
             model="anthropic:claude-haiku-4-5-20251001",
             prompt_file="search.md",
-            tools=["web_search", "scrape_url", "get_current_time"],
+            tools=["web_search", "scrape_url", "get_current_time", "read_skill"],
+            skills=["web-research"],
             description="Web research and information retrieval",
-        ),
-        "writer": ExecutorConfig(
-            model="anthropic:claude-haiku-4-5-20251001",
-            prompt_file="writer.md",
-            tools=["read_file", "write_file", "get_current_time"],
-            description="Writing, editing, and file-based tasks",
         ),
     }
     return sample_config.model_copy(update={

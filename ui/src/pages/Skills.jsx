@@ -80,7 +80,7 @@ export default function Skills() {
       ) : (
         <>
           <SkillSection title="Built-in" skills={data.builtin} emptyMessage="No built-in skills found" />
-          <SkillSection title="Workspace" skills={data.user} emptyMessage="Drop a SKILL.md into ~/.kore/data/skills/ to add your own" />
+          <SkillSection title="Workspace" skills={data.user} emptyMessage="Drop a SKILL.md into ~/.kore/workspace/skills/ to add your own" />
         </>
       )}
     </>

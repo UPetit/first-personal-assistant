@@ -1,5 +1,5 @@
 ---
-name: skill-vetter
+name: skill_vetter
 description: Security-first vetting protocol — review any skill before installing it
 metadata: '{"kore":{"emoji":"🔒","always":false,"requires":{"tools":[]}}}'
 ---

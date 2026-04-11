@@ -137,11 +137,13 @@ class BaseAgent:
             content = str(raw_output)
             structured = None
 
+        all_msgs = result.all_messages()
         return AgentResponse(
             content=content,
-            tool_calls=_extract_tool_calls(result.all_messages()),
+            tool_calls=_extract_tool_calls(all_msgs),
             model_used=self._model_string,
             output=structured,
+            reasoning_steps=_extract_reasoning(all_msgs),
         )
 
 
@@ -198,3 +200,19 @@ def _extract_tool_calls(messages: list[ModelMessage]) -> list[ToolCall]:
                         pending[call_id].result = part.content
 
     return ordered
+
+
+def _extract_reasoning(messages: list[ModelMessage]) -> list[str]:
+    """Extract non-empty text parts from ModelResponse messages.
+
+    These are the LLM's reasoning steps emitted between tool calls.
+    Only the final assistant message is typically pure content; earlier
+    TextParts are intermediate reasoning before the next tool call.
+    """
+    texts: list[str] = []
+    for msg in messages:
+        if isinstance(msg, ModelResponse):
+            for part in msg.parts:
+                if isinstance(part, TextPart) and part.content.strip():
+                    texts.append(part.content.strip())
+    return texts

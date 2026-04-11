@@ -8,6 +8,10 @@ services:
       - no-new-privileges:true
     volumes:
       - ~/.kore:/root/.kore
+      - ~/gogcli/bin/gog:/usr/local/bin/gog:ro
+      - ~/.config/gogcli:/root/.config/gogcli:ro
+      - /usr/local/bin/summarize:/usr/local/bin/summarize:ro
+      - ~/.summarize:/root/.summarize:ro
     tmpfs:
       - /tmp
     ports:

@@ -33,15 +33,18 @@ function TraceBlock({ runEvents }) {
 
   if (!runEvents || runEvents.length === 0) return null
 
+  const planSummary = runEvents.find(e => e.type === 'plan_summary')
   const planEvent = runEvents.find(e => e.type === 'plan_result')
   const executorStart = runEvents.find(e => e.type === 'executor_start')
+  const executorDone = runEvents.find(e => e.type === 'executor_done')
   const toolCalls = runEvents.filter(e => e.type === 'tool_call')
   const toolResults = runEvents.filter(e => e.type === 'tool_result')
   const toolPairs = toolCalls.map((tc, i) => ({ call: tc, result: toolResults[i] ?? null }))
 
-  const executorName = planEvent?.executor || executorStart?.executor_name || ''
+  const executorName = planSummary?.steps?.[0]?.executor || planEvent?.executor || executorStart?.executor_name || ''
   const label = executorName ? `planner → ${executorName}` : 'trace'
   const model = executorStart?.model?.split(':').slice(1).join(':') || executorStart?.model || ''
+  const reasoningSteps = executorDone?.reasoning_steps || []
 
   const toggleTool = idx => setExpandedTools(prev => {
     const next = new Set(prev)
@@ -64,15 +67,46 @@ function TraceBlock({ runEvents }) {
 
       {open && (
         <div className="trace-body">
-          {planEvent && (
+          {/* Planner section */}
+          {(planSummary || planEvent) && (
             <div className="trace-planner-row">
               <div className="trace-section-label">Planner</div>
               <div className="trace-reasoning">
-                Route to <span className="trace-executor-name">{planEvent.executor}</span>
-                {planEvent.reasoning ? ` — ${planEvent.reasoning}` : ''}
+                {planSummary ? (
+                  <>
+                    <div><strong>Intent:</strong> {planSummary.intent}</div>
+                    <div><strong>Reasoning:</strong> {planSummary.reasoning}</div>
+                    {planSummary.steps?.length > 1 && (
+                      <div className="trace-steps">
+                        {planSummary.steps.map((s, i) => (
+                          <div key={i} className="trace-step">
+                            <span className="trace-executor-name">{s.executor}</span>: {s.instruction}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>Route to <span className="trace-executor-name">{planEvent.executor}</span>
+                  {planEvent.reasoning ? ` — ${planEvent.reasoning}` : ''}</>
+                )}
               </div>
             </div>
           )}
+
+          {/* Executor reasoning steps (between tool calls) */}
+          {reasoningSteps.length > 1 && (
+            <div className="trace-planner-row">
+              <div className="trace-section-label">Executor</div>
+              <div className="trace-reasoning">
+                {reasoningSteps.slice(0, -1).map((step, i) => (
+                  <div key={i} className="trace-reasoning-step">{step}</div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tool calls */}
           {toolPairs.map(({ call, result }, idx) => (
             <div key={idx} className="trace-tool-item">
               <div className="trace-tool-header" onClick={() => toggleTool(idx)}>
@@ -280,8 +314,15 @@ export default function Sessions() {
             </div>
           )}
           {selectedId && (
-            <div className="sessions-scroll" ref={scrollContainerRef}>
-              <Timeline turns={turns} runs={runs} scrollContainerRef={scrollContainerRef} />
+            <div className="sessions-scroll-wrap">
+              <div className="sessions-scroll" ref={scrollContainerRef}>
+                <Timeline turns={turns} runs={runs} scrollContainerRef={scrollContainerRef} />
+              </div>
+              <button
+                className="scroll-bottom-btn"
+                onClick={() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: 'smooth' })}
+                title="Scroll to bottom"
+              >↓</button>
             </div>
           )}
         </div>

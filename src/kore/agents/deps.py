@@ -21,7 +21,8 @@ class KoreDeps:
     """
 
     config: KoreConfig
-    core_memory: Any = field(default=None)   # CoreMemory | None
-    event_log: Any = field(default=None)     # EventLog | None
-    retriever: Any = field(default=None)     # Retriever | None
-    skill_registry: Any = field(default=None)  # SkillRegistry | None
+    core_memory: Any = field(default=None)      # CoreMemory | None
+    event_log: Any = field(default=None)        # EventLog | None
+    retriever: Any = field(default=None)        # Retriever | None
+    skill_registry: Any = field(default=None)   # SkillRegistry | None
+    shell_allowlist: list[str] = field(default_factory=list)  # binaries this executor may run

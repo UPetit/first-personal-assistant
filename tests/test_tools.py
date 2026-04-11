@@ -451,3 +451,56 @@ async def test_scrape_url_rejects_unparseable_ip(mock_deps, monkeypatch):
     result = await scrape_url(mock_deps, "http://ghost.corp/")
     assert "[Error: Blocked" in result
     assert "[EXTERNAL_CONTENT]" not in result
+
+
+# ---------------------------------------------------------------------------
+# run_command
+# ---------------------------------------------------------------------------
+
+def _shell_deps(allowlist: list[str], base_deps):
+    """Return a mock deps namespace with the given shell_allowlist."""
+    from types import SimpleNamespace
+    from kore.agents.deps import KoreDeps
+    deps = KoreDeps(config=base_deps.deps.config, shell_allowlist=allowlist)
+    return SimpleNamespace(deps=deps)
+
+
+@pytest.mark.asyncio
+async def test_run_command_allowed(mock_deps):
+    from kore.tools.shell import run_command
+    ctx = _shell_deps(["echo"], mock_deps)
+    result = await run_command(ctx, "echo hello")
+    assert result == "hello"
+
+
+@pytest.mark.asyncio
+async def test_run_command_blocked(mock_deps):
+    from kore.tools.shell import run_command
+    ctx = _shell_deps(["echo"], mock_deps)
+    result = await run_command(ctx, "ls /tmp")
+    assert "not in this executor's shell_allowlist" in result
+
+
+@pytest.mark.asyncio
+async def test_run_command_no_allowlist(mock_deps):
+    from kore.tools.shell import run_command
+    ctx = _shell_deps([], mock_deps)
+    result = await run_command(ctx, "echo hi")
+    assert "disabled for this executor" in result
+
+
+@pytest.mark.asyncio
+async def test_run_command_nonzero_exit(mock_deps):
+    from kore.tools.shell import run_command
+    ctx = _shell_deps(["bash"], mock_deps)
+    result = await run_command(ctx, "bash -c 'exit 42'")
+    assert "Exit code 42" in result
+
+
+@pytest.mark.asyncio
+async def test_run_command_strips_path(mock_deps):
+    """Binary name matched by basename — /usr/bin/echo is the same as echo."""
+    from kore.tools.shell import run_command
+    ctx = _shell_deps(["echo"], mock_deps)
+    result = await run_command(ctx, "/usr/bin/echo world")
+    assert result == "world"

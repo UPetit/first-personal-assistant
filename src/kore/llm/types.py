@@ -33,3 +33,4 @@ class AgentResponse:
     tool_calls: list[ToolCall]
     model_used: str
     output: Any | None = None  # populated with structured output when output_type is set
+    reasoning_steps: list[str] = field(default_factory=list)  # text parts emitted between tool calls

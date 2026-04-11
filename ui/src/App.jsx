@@ -7,6 +7,7 @@ import Agents from './pages/Agents.jsx'
 import Memory from './pages/Memory.jsx'
 import Settings from './pages/Settings.jsx'
 import Sessions from './pages/Sessions.jsx'
+import Skills from './pages/Skills.jsx'
 
 const MAIN_NAV = [
   { to: '/',       label: 'Overview', icon: '⬡', end: true },
@@ -16,6 +17,7 @@ const MAIN_NAV = [
 ]
 const SYSTEM_NAV = [
   { to: '/agents',   label: 'Agents',   icon: '◈' },
+  { to: '/skills',   label: 'Skills',   icon: '✦' },
   { to: '/memory',   label: 'Memory',   icon: '🧠' },
   { to: '/settings', label: 'Settings', icon: '⚙' },
 ]
@@ -71,6 +73,7 @@ export default function App() {
             <Route path="/jobs"    element={<Jobs />} />
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/agents"  element={<Agents />} />
+            <Route path="/skills"  element={<Skills />} />
             <Route path="/memory"  element={<Memory />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

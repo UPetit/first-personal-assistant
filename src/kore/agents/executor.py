@@ -23,9 +23,10 @@ def create_executor(
     """Create a BaseAgent for the named executor from config.
 
     Raises KeyError if the executor name is not in config.agents.executors.
-    If *skill_registry* is provided and the executor has a non-empty skills list,
-    the system prompt is extended with the Level 1 skill summary (always) and
-    the Level 2 always-on skill bodies.
+    If *skill_registry* is provided, the system prompt is extended with the Level 1
+    skill summary (always) and the Level 2 always-on skill bodies.  An empty
+    ``skills`` list in the executor config is treated as ``["*"]`` (load all
+    skills whose dependencies are satisfied).
     """
     exec_cfg = config.agents.executors[name]  # raises KeyError if unknown
     model = get_model(exec_cfg.model, config)
@@ -47,12 +48,19 @@ def create_executor(
         import kore.tools.skill_tools  # noqa: F401
     except ImportError:
         pass
+    try:
+        import kore.tools.shell  # noqa: F401
+    except ImportError:
+        pass
     tools = get_tools(exec_cfg.tools)
 
     # Inject skill context into system prompt
-    if skill_registry is not None and exec_cfg.skills:
+    # Empty skills list means "load all" (wildcard) — explicit exclusion is not supported.
+    injected_skills: list[str] = []
+    if skill_registry is not None:
+        skill_names = exec_cfg.skills if exec_cfg.skills else ["*"]
         skills = skill_registry.get_skills_for_executor(
-            exec_cfg.skills, available_tools=exec_cfg.tools
+            skill_names, available_tools=exec_cfg.tools
         )
         if skills:
             level1 = skill_registry.build_level1_summary()
@@ -63,8 +71,9 @@ def create_executor(
                     f"\n\n## Always-Active Skill Instructions\n\n{level2}"
                 )
             prompt = prompt + skill_context
+            injected_skills = [s.name for s in skills]
 
-    return BaseAgent(
+    agent = BaseAgent(
         model,
         exec_cfg.model,
         prompt,
@@ -72,3 +81,5 @@ def create_executor(
         max_retries=exec_cfg.max_retries,
         max_tool_calls=config.security.max_tool_calls_per_request,
     )
+    agent.skills_loaded = injected_skills
+    return agent

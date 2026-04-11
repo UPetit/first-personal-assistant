@@ -245,13 +245,15 @@ When asked to research a topic:
 
 **Hot-reload after install:** When a skill is installed via ClawHub (or manually dropped into `data/skills/`), the skill registry auto-reloads: re-scans directories, runs dependency checks, rebuilds the Level 1 summary XML. The new skill is immediately available to executors with wildcard `"skills": ["*"]` (i.e., the `general` executor) — no restart required. Executors with explicit skill lists only see new skills after a config update. This enables a single-session flow: user says "install the git-manager skill and use it" → ClawHub downloads → registry reloads → agent uses the skill immediately.
 
-**v1 built-in skills (implemented):** `web-research`, `content-writer`, `memory-management` (always-on), `skill-creator`. (`email-management` and `daily-digest` are planned but not yet written.)
+**Skill visibility:** `BaseAgent` has a `skills_loaded: list[str]` attribute (set by `create_executor`) that records the names of skills injected at creation time. The orchestrator emits this list in `executor_start` trace events. Level 3 on-demand skill reads (agent calls `read_file` on a `SKILL.md` path) are also tagged as `skill_read` in `tool_call` trace events.
+
+**v1 built-in skills (implemented):** `web-research`, `content-writer`, `memory-management` (always-on), `skill-creator`, `skill-vetter` (security vetting protocol for skills before install). (`email-management` and `daily-digest` are planned but not yet written.) `summarize` (CLI-based URL/file summarizer, requires `summarize` bin) is a user-installed skill (`data/skills/`).
 
 ### Tools
 
 - Tools are Python functions decorated with Pydantic AI's `@agent.tool` decorator. JSON schemas auto-generated from type hints and docstrings.
 - Custom tools in `kore/tools/` are registered to agents via the executor config.
-- v1 tools: `web_search` (Brave Search API — returns `[{title, url, snippet}]`), `scrape_url`, `read_file`, `write_file`, `core_memory_update`, `core_memory_delete`, `memory_search`, `memory_store`, `cron_create`, `cron_list`, `cron_delete`, `get_current_time`.
+- v1 tools: `web_search` (Brave Search API — returns `[{title, url, snippet}]`), `scrape_url`, `read_file`, `write_file`, `core_memory_update`, `core_memory_delete`, `memory_search`, `memory_store`, `cron_create`, `cron_list`, `cron_delete`, `get_current_time`, `skill_search` (search ClawHub for skills), `skill_install` (install skill from ClawHub + auto-reload registry).
 - Tool access per executor follows least privilege (configured in `config.json`).
 - Skills reference tools by name — the agent reads skill instructions and calls the appropriate tools.
 
@@ -305,7 +307,7 @@ async def memory_search(ctx: RunContext, query: str, max_results: int = 10) -> s
 |-----------|-----------|
 | **Config** | Valid config loads, missing required fields fail, env var resolution, Pydantic validation |
 | **Agents / LLM** | Agent creation from config, model string resolution, tool registration, `TestModel` structured output, `FallbackModel` failover |
-| **Skills** | SKILL.md parsing (frontmatter + body), discovery precedence (user overrides built-in), dependency checking (tools, bins, env), per-executor mapping, always-on loading, ClawHub search/install mock, **hot-reload after install** (registry picks up new skill, summary XML rebuilt, wildcard executors see it) |
+| **Skills** | SKILL.md parsing (frontmatter + body), discovery precedence (user overrides built-in), dependency checking (tools, bins, env), per-executor mapping, always-on loading, ClawHub search/install mock, **hot-reload after install** (registry picks up new skill, summary XML rebuilt, wildcard executors see it), `skill_search`/`skill_install` tools, `skills_loaded` on BaseAgent, `skill_read` tag in tool_call trace events |
 | **Tools** | Type hint → JSON schema generation, tool execution, error handling, access filtering per executor |
 | **Planner** | Intent classification → correct executor selection, structured `PlanResult` output, fallback to `general` executor |
 | **Executor** | Tool call → result → next step → done via Pydantic AI run loop, tool error handling |
@@ -317,7 +319,7 @@ async def memory_search(ctx: RunContext, query: str, max_results: int = 10) -> s
 | **Extraction** | Conversation → event extraction, empty conversation handling, importance scoring |
 | **Telegram** | Message normalization, chunking (>4096 chars), allowed_user_ids filtering, command parsing |
 | **CRON** | Job scheduling, timezone handling (DST), job persistence across restart, consolidation timer, **dynamic job creation/deletion via tools**, cron expression validation |
-| **Gateway** | Route responses, auth enforcement, rate limiting, WebSocket connection |
+| **Gateway** | Route responses, auth enforcement, rate limiting, WebSocket connection, `GET /api/skills` (builtin/user split, active/missing computation, reload-on-request, null registry fallback) |
 | **Integration** | Full flow: Telegram message → gateway → planner → executor → tools → memory → response |
 
 ### Testing patterns
@@ -378,6 +380,7 @@ Every phase includes its tests. Code is not done until its tests pass.
 4. **Memory** ✅ — SQLite + FTS5 + sqlite-vec, core memory (JSON), event log, retrieval, extraction, memory tools, embedding cascade. **Tests:** core memory CRUD + token cap, event insert + hybrid search, temporal decay math, extraction from sample conversations, embedding fallback chain.
 5. **Channels & scheduler** ✅ — Telegram webhook adapter, asyncio CRON scheduler with `jobs.json` store, CRON tools (`cron_create`/`list`/`delete`), consolidation agent timer. **Tests:** Telegram message normalization + auth filtering, CRON job persistence + timezone, dynamic job creation/deletion via tools, consolidation cycle (promotion, contradiction, GC).
 6. **Web UI** ✅ — FastAPI dashboard endpoints, React pages, WebSocket log streaming. **Tests:** all API routes (auth, responses, errors), WebSocket connection lifecycle.
+   - **Skills page** (approved spec `docs/superpowers/specs/2026-03-24-skills-page-design.md`, not yet implemented): `GET /api/skills` → `{builtin: [SkillInfo], user: [SkillInfo]}`. `SkillInfo` includes `name, description, emoji, always_on, required_tools, required_bins, required_env, active, missing`. `active` is `false` when any bin/env dep is missing (tool deps are informational only). `GET /api/skills` calls `registry.reload()` on every request (Reload button just re-fetches). UI: card grid with always-on badge, tool/bin/env tags, amber warning for inactive skills. Empty workspace section shows hint. Skills nav item (`✦`) added between Agents and Memory.
 7. **Integration & hardening** ✅ — Full message-to-response integration tests, error handling, rate limiting, structured logging. **Tests:** full pipeline integration (message → plan → execute → memory → respond), failure paths (API down, auth rejected, token limit, empty results).
 8. **Session debugger** ✅ — `TraceStore` (SQLite, 7-day TTL at `~/.kore/kore.db`) replaces in-memory EventBus. Orchestrator emits typed events (`session_start`, `plan_result`, `executor_start`, `tool_call`, `tool_result`, `executor_done`, `session_done`). REST polling (`GET /api/sessions/{id}/trace`) replaces WebSocket. UI Sessions page shows live trace timeline per turn. `/new` Telegram command starts a fresh session; `_resolve_session()` auto-resumes latest session after server restart.
 - **Transient API errors:** `_run_with_retry()` in `agents/base.py` retries 529/503 with 2 s → 4 s → 8 s backoff before re-raising.

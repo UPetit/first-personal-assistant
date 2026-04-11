@@ -12,7 +12,7 @@ class SkillRegistry:
     """Discovers, indexes, and serves skills from built-in and user directories.
 
     Built-in skills live in the project `skills/` directory.
-    User skills live in `data/skills/` (or a configured path).
+    User skills live in `workspace/skills/` (or a configured path).
     User skills with the same name override built-in ones.
     """
 
@@ -80,12 +80,11 @@ class SkillRegistry:
         ~100 tokens per skill. Lets the agent know what skills exist and
         where to find them (for on-demand Level 3 loading via read_file).
         """
-        lines = ["<skills>"]
+        lines = ["<skills>  <!-- use read_skill(name) to load full instructions -->"]
         for skill in self._skills.values():
             lines.append(
                 f"  <skill name={quoteattr(skill.name)}"
-                f" description={quoteattr(skill.description)}"
-                f" path={quoteattr(str(skill.path))} />"
+                f" description={quoteattr(skill.description)} />"
             )
         lines.append("</skills>")
         return "\n".join(lines)

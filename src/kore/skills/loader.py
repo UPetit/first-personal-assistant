@@ -15,6 +15,7 @@ class SkillMeta:
     description: str
     path: Path
     always_on: bool = False
+    emoji: str = "✦"
     required_tools: list[str] = field(default_factory=list)
     required_bins: list[str] = field(default_factory=list)
     required_env: list[str] = field(default_factory=list)
@@ -47,6 +48,7 @@ def parse_skill_md(path: Path) -> SkillMeta:
             pass
 
     always_on = bool(kore_meta.get("always", False))
+    emoji = str(kore_meta.get("emoji", "✦")) or "✦"
     requires: dict = kore_meta.get("requires", {})
 
     return SkillMeta(
@@ -54,6 +56,7 @@ def parse_skill_md(path: Path) -> SkillMeta:
         description=description,
         path=path,
         always_on=always_on,
+        emoji=emoji,
         required_tools=list(requires.get("tools", [])),
         required_bins=list(requires.get("bins", [])),
         required_env=list(requires.get("env", [])),

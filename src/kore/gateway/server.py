@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from kore.gateway.trace_store import TraceStore
     from kore.memory.core_memory import CoreMemory
     from kore.scheduler.cron import KoreCronScheduler
+    from kore.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ def create_app(
     orchestrator: Orchestrator | None = None,
     telegram_channel: TelegramChannel | None = None,
     trace_store: TraceStore | None = None,
+    skill_registry: SkillRegistry | None = None,
 ) -> FastAPI:
     """Build and return the FastAPI application.
 
@@ -63,6 +65,7 @@ def create_app(
     app.state.telegram_channel = telegram_channel
     app.state.log_handler = log_handler
     app.state.trace_store = trace_store
+    app.state.skill_registry = skill_registry
 
     # Register routers (imported here to keep create_app importable without side-effects)
     from kore.gateway.routes_api import router as api_router

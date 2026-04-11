@@ -1,5 +1,5 @@
 ---
-name: web-research
+name: search_web
 description: Search the web effectively and synthesize findings from multiple sources
 metadata: '{"kore":{"emoji":"🔍","always":false,"requires":{"tools":["web_search","scrape_url"]}}}'
 ---
@@ -9,9 +9,9 @@ metadata: '{"kore":{"emoji":"🔍","always":false,"requires":{"tools":["web_sear
 When asked to research a topic:
 
 1. **Break the query into 2-3 specific search queries** — avoid single vague queries.
-2. **Use `web_search` for each query** — review titles and snippets to pick the most relevant results.
+2. **Use `web_search` tool for each query** — review titles and snippets to pick the most relevant results.
 3. **Evaluate source quality** — prefer primary sources, official docs, and reputable outlets over aggregators.
-4. **Use `scrape_url` on the top 2-3 results** for full content when snippets are insufficient.
+4. **Use `scrape_url` tool on the top 2-3 results** for full content when snippets are insufficient.
 5. **Synthesize findings** — note agreements, contradictions, and gaps between sources.
 6. **Cite sources** — always include URLs in the final response.
 

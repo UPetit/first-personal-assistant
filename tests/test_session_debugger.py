@@ -68,6 +68,7 @@ async def test_orchestrator_emits_events_in_correct_order(kore_home, tmp_path):
     ):
         mock_exec = MagicMock()
         mock_exec.run = AsyncMock(return_value=exec_response)
+        mock_exec.skills_loaded = []
         mock_get_exec.return_value = mock_exec
 
         await orch.run("hello", "test_session")
@@ -76,19 +77,22 @@ async def test_orchestrator_emits_events_in_correct_order(kore_home, tmp_path):
     types = [e["type"] for e in events]
     assert types == [
         "session_start",
+        "plan_summary",
         "plan_result",
         "executor_start",
         "executor_done",
         "session_done",
     ]
     assert events[0]["message"] == "hello"
-    assert events[1]["step_index"] == 0
-    assert events[1]["executor"] == "general"
+    assert events[1]["intent"] == "test intent"
     assert events[1]["reasoning"] == "test reasoning"
     assert events[2]["step_index"] == 0
-    assert events[2]["executor_name"] == "general"
+    assert events[2]["executor"] == "general"
+    assert events[2]["reasoning"] == "test reasoning"
     assert events[3]["step_index"] == 0
-    assert events[4]["response"] == "hello"
+    assert events[3]["executor_name"] == "general"
+    assert events[4]["step_index"] == 0
+    assert events[5]["response"] == "hello"
 
 
 @pytest.mark.asyncio
@@ -113,6 +117,7 @@ async def test_orchestrator_emits_tool_call_and_result_events(kore_home, tmp_pat
     ):
         mock_exec = MagicMock()
         mock_exec.run = AsyncMock(return_value=exec_response)
+        mock_exec.skills_loaded = []
         mock_get_exec.return_value = mock_exec
 
         await orch.run("search this", "test_session")
@@ -149,6 +154,7 @@ async def test_orchestrator_without_trace_store_emits_nothing(kore_home):
     ):
         mock_exec = MagicMock()
         mock_exec.run = AsyncMock(return_value=exec_response)
+        mock_exec.skills_loaded = []
         mock_get_exec.return_value = mock_exec
 
         # Must not raise

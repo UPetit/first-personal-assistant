@@ -97,13 +97,32 @@ class Orchestrator:
                 await self._emit({"type": "session_done", "session_id": session_id, "response": response.content})
                 return response
 
-            # 2. Execute steps sequentially, feed-forward
+            # 2. Emit full plan summary before executing any step
+            await self._emit({
+                "type": "plan_summary",
+                "session_id": session_id,
+                "intent": plan.intent,
+                "reasoning": plan.reasoning,
+                "steps": [{"executor": s.executor, "instruction": s.instruction} for s in plan.steps],
+            })
+
+            # 3. Execute steps sequentially, feed-forward
             context = message
             last_response: AgentResponse | None = None
             for step_index, step in enumerate(plan.steps):
                 executor, safe_instruction = self._resolve_step(step.executor, step.instruction, message)
                 executor_name = step.executor if step.executor in self._config.agents.executors else "general"
-                executor_model = self._config.agents.executors.get(executor_name, self._config.agents.executors.get("general"))
+                executor_cfg = self._config.agents.executors.get(executor_name, self._config.agents.executors.get("general"))
+
+                # Build per-step deps with the executor's shell allowlist
+                step_deps = KoreDeps(
+                    config=self._config,
+                    core_memory=self._core_memory,
+                    event_log=self._event_log,
+                    retriever=self._retriever,
+                    skill_registry=self._skill_registry,
+                    shell_allowlist=executor_cfg.shell_allowlist if executor_cfg else [],
+                )
 
                 await self._emit({
                     "type": "plan_result",
@@ -118,21 +137,29 @@ class Orchestrator:
                     "session_id": session_id,
                     "step_index": step_index,
                     "executor_name": executor_name,
-                    "model": executor_model.model if executor_model else "unknown",
+                    "model": executor_cfg.model if executor_cfg else "unknown",
+                    "skills_loaded": executor.skills_loaded,
                 })
 
                 instruction = f"{safe_instruction}\n\nContext from previous step:\n{context}"
-                last_response = await executor.run(instruction, deps=kore_deps)
+                last_response = await executor.run(instruction, deps=step_deps)
                 context = last_response.content
 
                 # Emit tool calls as a batch (pydantic-ai exposes them post-run)
                 for tc in last_response.tool_calls:
+                    # Detect Level 3 on-demand skill reads (read_file called on a SKILL.md path)
+                    skill_read: str | None = None
+                    if tc.name == "read_file":
+                        path_arg = str(tc.args.get("path", ""))
+                        if "SKILL.md" in path_arg:
+                            skill_read = path_arg
                     await self._emit({
                         "type": "tool_call",
                         "session_id": session_id,
                         "step_index": step_index,
                         "tool_name": tc.name,
                         "args": tc.args,
+                        **({"skill_read": skill_read} if skill_read else {}),
                     })
                     result_str = str(tc.result) if tc.result is not None else ""
                     await self._emit({
@@ -148,6 +175,7 @@ class Orchestrator:
                     "session_id": session_id,
                     "step_index": step_index,
                     "content_preview": last_response.content[:200],
+                    "reasoning_steps": last_response.reasoning_steps,
                 })
 
             # 3. Persist turn and compact if needed

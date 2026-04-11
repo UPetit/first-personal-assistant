@@ -26,13 +26,11 @@ def test_create_executor_search(sample_config_with_agents):
     assert "read_file" not in tool_names
 
 
-def test_create_executor_writer(sample_config_with_agents):
-    agent = create_executor("writer", sample_config_with_agents)
-    assert agent._model_string == "anthropic:claude-haiku-4-5-20251001"
+def test_create_executor_general_file_tools(sample_config_with_agents):
+    agent = create_executor("general", sample_config_with_agents)
     tool_names = list(agent._agent._function_toolset.tools.keys())
     assert "read_file" in tool_names
     assert "write_file" in tool_names
-    assert "web_search" not in tool_names
 
 
 def test_unknown_executor_raises(sample_config_with_agents):

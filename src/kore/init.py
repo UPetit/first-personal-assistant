@@ -32,22 +32,17 @@ _CONFIG_TEMPLATE = {
             "general": {
                 "model": "anthropic:claude-sonnet-4-6",
                 "prompt_file": "general.md",
-                "tools": ["web_search", "scrape_url", "get_current_time", "core_memory_update", "core_memory_delete", "memory_search", "memory_store"],
-                "skills": ["*"],
+                "tools": ["web_search", "scrape_url", "get_current_time", "read_skill", "core_memory_update", "core_memory_delete", "memory_search", "memory_store"],
+                "skills": ["content_writer", "memory_management", "skill_vetter", "skill_creator", "summarize"],
                 "description": "Handles complex or mixed tasks requiring multiple capabilities",
             },
             "search": {
                 "model": "anthropic:claude-haiku-4-5-20251001",
                 "prompt_file": "search.md",
-                "tools": ["web_search", "scrape_url", "get_current_time"],
+                "tools": ["web_search", "scrape_url", "get_current_time", "read_skill"],
+                "skills": ["web_research", "summarize"],
                 "description": "Web research and information retrieval",
-            },
-            "writer": {
-                "model": "anthropic:claude-haiku-4-5-20251001",
-                "prompt_file": "writer.md",
-                "tools": ["read_file", "write_file", "get_current_time"],
-                "description": "Writing, editing, and file-based tasks",
-            },
+            }
         },
     },
     "tools": {

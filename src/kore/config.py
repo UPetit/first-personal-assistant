@@ -49,7 +49,7 @@ class SkillsConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     builtin_dir: str = "skills"          # relative to project root
-    user_dir: str | None = None          # None → KORE_HOME / "data/skills"
+    user_dir: str | None = None          # None → KORE_HOME / "workspace/skills"
     clawhub_base_url: str = "https://clawhub.dev/api/v1"
 
 
@@ -141,9 +141,10 @@ class ExecutorConfig(BaseModel):
     model: str
     prompt_file: str
     tools: list[str]
-    skills: list[str] = []    # Forward-compat stub for Phase 2. Not read in Phase 1.
-    description: str = ""     # One-line description shown to the planner.
-    max_retries: int = 3      # Pydantic AI retries on malformed output before raising.
+    skills: list[str] = []          # Forward-compat stub for Phase 2. Not read in Phase 1.
+    description: str = ""           # One-line description shown to the planner.
+    max_retries: int = 3            # Pydantic AI retries on malformed output before raising.
+    shell_allowlist: list[str] = [] # Binaries this executor may run via run_command.
 
     @field_validator("model")
     @classmethod

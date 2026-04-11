@@ -320,6 +320,20 @@ async def test_create_app_with_orchestrator_state():
     assert app.state.orchestrator is mock_orch
 
 
+def test_create_app_stores_skill_registry_in_state():
+    """skill_registry passed to create_app() is accessible via app.state."""
+    from unittest.mock import MagicMock
+    registry = MagicMock()
+    app = _make_app(skill_registry=registry)
+    assert app.state.skill_registry is registry
+
+
+def test_create_app_skill_registry_defaults_to_none():
+    """create_app() without skill_registry sets app.state.skill_registry to None."""
+    app = _make_app()
+    assert app.state.skill_registry is None
+
+
 # ── exception sanitization ────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
@@ -405,3 +419,161 @@ async def test_get_logs_valid_n_returns_200():
         r = await c.get("/api/logs?n=50")
     assert r.status_code == 200
     assert isinstance(r.json(), list)
+
+
+# ── /api/skills ───────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_get_skills_returns_empty_when_registry_none():
+    """Returns {builtin:[], user:[]} when skill_registry is not set."""
+    app = _make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/skills")
+    assert r.status_code == 200
+    assert r.json() == {"builtin": [], "user": []}
+
+
+@pytest.mark.asyncio
+async def test_get_skills_splits_builtin_and_user(tmp_path):
+    """Skills under user_dir go to 'user'; others go to 'builtin'."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin_dir = tmp_path / "builtin"
+    user_dir = tmp_path / "user"
+    for d in (builtin_dir, user_dir):
+        d.mkdir()
+
+    (builtin_dir / "web-research").mkdir()
+    (builtin_dir / "web-research" / "SKILL.md").write_text(
+        '---\nname: web-research\ndescription: Search\n'
+        'metadata: \'{"kore":{"emoji":"🔍","always":false,"requires":{}}}\'\n---\n# Body\n'
+    )
+    (user_dir / "my-skill").mkdir()
+    (user_dir / "my-skill" / "SKILL.md").write_text(
+        '---\nname: my-skill\ndescription: Custom\n'
+        'metadata: \'{"kore":{"emoji":"⭐","always":false,"requires":{}}}\'\n---\n# Body\n'
+    )
+
+    registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=user_dir)
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/skills")
+    data = r.json()
+    assert len(data["builtin"]) == 1
+    assert data["builtin"][0]["name"] == "web-research"
+    assert len(data["user"]) == 1
+    assert data["user"][0]["name"] == "my-skill"
+
+
+@pytest.mark.asyncio
+async def test_get_skills_active_false_when_bin_missing(tmp_path):
+    """active=False and missing=[bin] when a required binary is not on PATH."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin_dir = tmp_path / "builtin"
+    builtin_dir.mkdir()
+    (builtin_dir / "needs-bin").mkdir()
+    (builtin_dir / "needs-bin" / "SKILL.md").write_text(
+        '---\nname: needs-bin\ndescription: Needs a bin\n'
+        'metadata: \'{"kore":{"emoji":"🔧","always":false,"requires":{"bins":["__nonexistent_bin__"]}}}\'\n---\n# Body\n'
+    )
+
+    registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=tmp_path / "user")
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/skills")
+    skill = r.json()["builtin"][0]
+    assert skill["active"] is False
+    assert "__nonexistent_bin__" in skill["missing"]
+
+
+@pytest.mark.asyncio
+async def test_get_skills_active_true_when_no_deps(tmp_path):
+    """active=True and missing=[] for a skill with no bin/env requirements."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin_dir = tmp_path / "builtin"
+    builtin_dir.mkdir()
+    (builtin_dir / "simple").mkdir()
+    (builtin_dir / "simple" / "SKILL.md").write_text(
+        '---\nname: simple\ndescription: Simple skill\n'
+        'metadata: \'{"kore":{"emoji":"✨","always":false,"requires":{}}}\'\n---\n# Body\n'
+    )
+
+    registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=tmp_path / "user")
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/skills")
+    skill = r.json()["builtin"][0]
+    assert skill["active"] is True
+    assert skill["missing"] == []
+
+
+@pytest.mark.asyncio
+async def test_get_skills_tool_deps_do_not_affect_active(tmp_path):
+    """Tool requirements are informational — active stays True even if tools listed."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin_dir = tmp_path / "builtin"
+    builtin_dir.mkdir()
+    (builtin_dir / "tool-skill").mkdir()
+    (builtin_dir / "tool-skill" / "SKILL.md").write_text(
+        '---\nname: tool-skill\ndescription: Needs tools\n'
+        'metadata: \'{"kore":{"emoji":"🛠","always":false,"requires":{"tools":["web_search","scrape_url"]}}}\'\n---\n# Body\n'
+    )
+
+    registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=tmp_path / "user")
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/skills")
+    skill = r.json()["builtin"][0]
+    assert skill["active"] is True
+    assert skill["required_tools"] == ["web_search", "scrape_url"]
+
+
+@pytest.mark.asyncio
+async def test_get_skills_active_false_when_env_missing(tmp_path, monkeypatch):
+    """active=False and missing=[env] when a required env var is absent."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin_dir = tmp_path / "builtin"
+    builtin_dir.mkdir()
+    (builtin_dir / "needs-env").mkdir()
+    (builtin_dir / "needs-env" / "SKILL.md").write_text(
+        '---\nname: needs-env\ndescription: Needs an env var\n'
+        'metadata: \'{"kore":{"emoji":"🔑","always":false,"requires":{"env":["__NONEXISTENT_ENV_VAR__"]}}}\'\n---\n# Body\n'
+    )
+
+    monkeypatch.delenv("__NONEXISTENT_ENV_VAR__", raising=False)
+
+    registry = SkillRegistry(builtin_dir=builtin_dir, user_dir=tmp_path / "user")
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/api/skills")
+    skill = r.json()["builtin"][0]
+    assert skill["active"] is False
+    assert "__NONEXISTENT_ENV_VAR__" in skill["missing"]
+
+
+@pytest.mark.asyncio
+async def test_get_skills_calls_reload_on_each_request():
+    """GET /api/skills calls registry.reload() on every request."""
+    from kore.skills.registry import SkillRegistry
+
+    # Use a real registry but spy on reload
+    registry = MagicMock(spec=SkillRegistry)
+    registry.all_skills.return_value = []
+    registry.user_dir = "/nonexistent"
+
+    app = _make_app(skill_registry=registry)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        await c.get("/api/skills")
+        await c.get("/api/skills")
+
+    assert registry.reload.call_count == 2

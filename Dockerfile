@@ -18,8 +18,9 @@ COPY src/ src/
 RUN pip install uv && \
     uv pip install --no-cache --system .
 
-# Bake prompts into image — not user-editable, no runtime mount needed
+# Bake prompts and built-in skills into image — not user-editable, no runtime mount needed
 COPY prompts/ prompts/
+COPY skills/ skills/
 ENV KORE_PROMPTS_DIR=/app/prompts
 
 # Entrypoint runs as root, fixes ~/.kore ownership, then drops to kore (uid 1000)

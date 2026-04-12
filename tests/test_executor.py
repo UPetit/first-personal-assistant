@@ -167,3 +167,40 @@ def test_create_executor_level2_scoped_to_executor_skills(tmp_path, sample_confi
     assert "memory-management body" not in prompt
     # web-research is not always-on, so it appears only in Level 1 XML
     assert "web-research" in prompt
+
+
+def test_soul_md_injected_into_system_prompt(tmp_path, sample_config_with_agents):
+    """SOUL.md content appears in executor system prompt when file exists."""
+    (tmp_path / "SOUL.md").write_text("You are Kore. Be direct and concise.")
+    agent = create_executor("general", sample_config_with_agents, kore_home=tmp_path)
+    prompt = agent._agent._system_prompts[0]
+    assert "You are Kore. Be direct and concise." in prompt
+
+
+def test_user_md_injected_into_system_prompt(tmp_path, sample_config_with_agents):
+    """USER.md content appears in executor system prompt when file exists."""
+    (tmp_path / "USER.md").write_text("Name: Ulysse. Timezone: Europe/Paris.")
+    agent = create_executor("general", sample_config_with_agents, kore_home=tmp_path)
+    prompt = agent._agent._system_prompts[0]
+    assert "Name: Ulysse. Timezone: Europe/Paris." in prompt
+
+
+def test_missing_persona_files_skipped(tmp_path, sample_config_with_agents):
+    """No error when SOUL.md and USER.md are absent; executor prompt unchanged."""
+    # tmp_path intentionally has no SOUL.md or USER.md
+    agent = create_executor("general", sample_config_with_agents, kore_home=tmp_path)
+    prompt = agent._agent._system_prompts[0]
+    # Normal executor instructions must still be present
+    assert "general-purpose" in prompt
+
+
+def test_soul_before_user_before_executor_prompt(tmp_path, sample_config_with_agents):
+    """SOUL.md appears before USER.md, both appear before executor instructions."""
+    (tmp_path / "SOUL.md").write_text("Soul content here.")
+    (tmp_path / "USER.md").write_text("User content here.")
+    agent = create_executor("general", sample_config_with_agents, kore_home=tmp_path)
+    prompt = agent._agent._system_prompts[0]
+    soul_pos = prompt.index("Soul content here.")
+    user_pos = prompt.index("User content here.")
+    executor_pos = prompt.index("general-purpose")
+    assert soul_pos < user_pos < executor_pos

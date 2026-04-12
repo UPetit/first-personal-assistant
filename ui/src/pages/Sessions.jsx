@@ -41,7 +41,7 @@ function TraceBlock({ runEvents }) {
   const toolResults = runEvents.filter(e => e.type === 'tool_result')
   const toolPairs = toolCalls.map((tc, i) => ({ call: tc, result: toolResults[i] ?? null }))
 
-  const executorName = planSummary?.steps?.[0]?.executor || planEvent?.executor || executorStart?.executor_name || ''
+  const executorName = executorStart?.executor_name || planSummary?.steps?.[0]?.executor || planEvent?.executor || ''
   const label = executorName ? `planner → ${executorName}` : 'trace'
   const model = executorStart?.model?.split(':').slice(1).join(':') || executorStart?.model || ''
   const skillsLoaded = executorStart?.skills_loaded || []

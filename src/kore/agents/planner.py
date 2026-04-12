@@ -53,6 +53,18 @@ def _build_executors_summary(config: KoreConfig) -> str:
     for name, cfg in config.agents.executors.items():
         for tool in (cfg.tools or []):
             lines.append(f"  {tool} → use {name!r}")
+    lines += [
+        "",
+        "## Routing examples — map task descriptions to executor names",
+        "  'Browse this URL / go to X / scrape / check this page' → look for executor with scrape_url",
+        "  'Search the web / find recent info / look up X online' → look for executor with web_search",
+        "  'Write / draft / compose / summarise text' → look for executor with memory/writing tools",
+        "  'Remember / save / recall / what did I say about X' → look for executor with memory tools",
+        "",
+        "CRITICAL: Never invent executor names based on the task description.",
+        "The task may say 'browse' or 'search' — that is the task, not the executor name.",
+        f"The ONLY valid executor names are: {list(config.agents.executors.keys())}",
+    ]
     return "\n".join(lines)
 
 

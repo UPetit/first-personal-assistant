@@ -34,22 +34,42 @@ function TraceBlock({ runEvents }) {
   if (!runEvents || runEvents.length === 0) return null
 
   const planSummary = runEvents.find(e => e.type === 'plan_summary')
-  const planEvent = runEvents.find(e => e.type === 'plan_result')
-  const executorStart = runEvents.find(e => e.type === 'executor_start')
-  const executorDone = runEvents.find(e => e.type === 'executor_done')
-  const toolCalls = runEvents.filter(e => e.type === 'tool_call')
-  const toolResults = runEvents.filter(e => e.type === 'tool_result')
-  const toolPairs = toolCalls.map((tc, i) => ({ call: tc, result: toolResults[i] ?? null }))
 
-  const executorName = executorStart?.executor_name || planSummary?.steps?.[0]?.executor || planEvent?.executor || ''
-  const label = executorName ? `planner → ${executorName}` : 'trace'
-  const model = executorStart?.model?.split(':').slice(1).join(':') || executorStart?.model || ''
-  const skillsLoaded = executorStart?.skills_loaded || []
-  const reasoningSteps = executorDone?.reasoning_steps || []
+  // Group events by step_index to build per-executor sections
+  const stepMap = {}
+  for (const e of runEvents) {
+    if (e.step_index == null) continue
+    if (!stepMap[e.step_index]) stepMap[e.step_index] = []
+    stepMap[e.step_index].push(e)
+  }
+  const steps = Object.keys(stepMap)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map(idx => {
+      const events = stepMap[idx]
+      const start = events.find(e => e.type === 'executor_start')
+      const done = events.find(e => e.type === 'executor_done')
+      const calls = events.filter(e => e.type === 'tool_call')
+      const results = events.filter(e => e.type === 'tool_result')
+      return {
+        idx,
+        name: start?.executor_name || '',
+        model: start?.model || '',
+        skills: start?.skills_loaded || [],
+        pairs: calls.map((tc, i) => ({ call: tc, result: results[i] ?? null })),
+        reasoningSteps: done?.reasoning_steps || [],
+      }
+    })
 
-  const toggleTool = idx => setExpandedTools(prev => {
+  // Header label: actual resolved executor names
+  const executorNames = steps.map(s => s.name).filter(Boolean)
+  const label = executorNames.length > 0 ? `planner → ${executorNames.join(' → ')}` : 'trace'
+  const firstModel = steps[0]?.model?.split(':').slice(1).join(':') || steps[0]?.model || ''
+  const totalTools = steps.reduce((sum, s) => sum + s.pairs.length, 0)
+
+  const toggleTool = key => setExpandedTools(prev => {
     const next = new Set(prev)
-    next.has(idx) ? next.delete(idx) : next.add(idx)
+    next.has(key) ? next.delete(key) : next.add(key)
     return next
   })
 
@@ -59,86 +79,92 @@ function TraceBlock({ runEvents }) {
         <div className="trace-card-left">
           <span className="trace-toggle">{open ? '▾' : '▸'}</span>
           <span className="trace-label-main">{label}</span>
-          {model && <span className="trace-model-chip">{model}</span>}
+          {firstModel && <span className="trace-model-chip">{firstModel}</span>}
         </div>
-        {!open && toolPairs.length > 0 && (
-          <span className="trace-tool-count">{toolPairs.length} tool{toolPairs.length > 1 ? 's' : ''}</span>
+        {!open && totalTools > 0 && (
+          <span className="trace-tool-count">{totalTools} tool{totalTools > 1 ? 's' : ''}</span>
         )}
       </div>
 
       {open && (
         <div className="trace-body">
           {/* Planner section */}
-          {(planSummary || planEvent) && (
+          {planSummary && (
             <div className="trace-planner-row">
               <div className="trace-section-label">Planner</div>
               <div className="trace-reasoning">
-                {planSummary ? (
-                  <>
-                    <div><strong>Intent:</strong> {planSummary.intent}</div>
-                    <div><strong>Reasoning:</strong> {planSummary.reasoning}</div>
-                    {planSummary.steps?.length > 1 && (
-                      <div className="trace-steps">
-                        {planSummary.steps.map((s, i) => (
-                          <div key={i} className="trace-step">
-                            <span className="trace-executor-name">{s.executor}</span>: {s.instruction}
-                          </div>
-                        ))}
+                <div><strong>Intent:</strong> {planSummary.intent}</div>
+                <div><strong>Reasoning:</strong> {planSummary.reasoning}</div>
+                {planSummary.steps?.length > 1 && (
+                  <div className="trace-steps">
+                    {planSummary.steps.map((s, i) => (
+                      <div key={i} className="trace-step">
+                        <span className="trace-executor-name">{s.executor}</span>: {s.instruction}
                       </div>
-                    )}
-                  </>
-                ) : (
-                  <>Route to <span className="trace-executor-name">{planEvent.executor}</span>
-                  {planEvent.reasoning ? ` — ${planEvent.reasoning}` : ''}</>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
           )}
 
-          {/* Executor reasoning steps (between tool calls) */}
-          {reasoningSteps.length > 1 && (
-            <div className="trace-planner-row">
-              <div className="trace-section-label">Executor</div>
-              <div className="trace-reasoning">
-                {reasoningSteps.slice(0, -1).map((step, i) => (
-                  <div key={i} className="trace-reasoning-step">{step}</div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Skills loaded */}
-          {skillsLoaded.length > 0 && (
-            <div className="trace-planner-row">
-              <div className="trace-section-label">Skills</div>
-              <div className="trace-skills">
-                {skillsLoaded.map(s => <span key={s} className="trace-skill-chip">{s}</span>)}
-              </div>
-            </div>
-          )}
-
-          {/* Tool calls */}
-          {toolPairs.map(({ call, result }, idx) => (
-            <div key={idx} className="trace-tool-item">
-              <div className="trace-tool-header" onClick={() => toggleTool(idx)}>
-                <span className="trace-tool-icon">🔧</span>
-                <span className="trace-tool-name">{call.tool_name}</span>
-                <span className="trace-tool-expand">{expandedTools.has(idx) ? '▾' : '▸ collapsed'}</span>
-              </div>
-              {expandedTools.has(idx) && (
-                <div className="trace-tool-detail">
-                  <div className="trace-detail-label">Args</div>
-                  <pre className="trace-code trace-code-args">{JSON.stringify(call.args, null, 2)}</pre>
-                  {result && (
-                    <>
-                      <div className="trace-detail-label">Result</div>
-                      <pre className="trace-code trace-code-result">{result.result}</pre>
-                    </>
-                  )}
+          {/* Per-executor sections */}
+          {steps.map(({ idx, name, model, skills, pairs, reasoningSteps }) => {
+            const stepModel = model?.split(':').slice(1).join(':') || model || ''
+            return (
+              <div key={idx} className="trace-executor-block">
+                <div className="trace-executor-header">
+                  <span className="trace-executor-label">{name || `step ${idx}`}</span>
+                  {stepModel && <span className="trace-model-chip">{stepModel}</span>}
                 </div>
-              )}
-            </div>
-          ))}
+
+                {skills.length > 0 && (
+                  <div className="trace-planner-row">
+                    <div className="trace-section-label">Skills</div>
+                    <div className="trace-skills">
+                      {skills.map(s => <span key={s} className="trace-skill-chip">{s}</span>)}
+                    </div>
+                  </div>
+                )}
+
+                {reasoningSteps.length > 1 && (
+                  <div className="trace-planner-row">
+                    <div className="trace-section-label">Reasoning</div>
+                    <div className="trace-reasoning">
+                      {reasoningSteps.slice(0, -1).map((step, i) => (
+                        <div key={i} className="trace-reasoning-step">{step}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {pairs.map(({ call, result }, toolIdx) => {
+                  const key = `${idx}-${toolIdx}`
+                  return (
+                    <div key={toolIdx} className="trace-tool-item">
+                      <div className="trace-tool-header" onClick={() => toggleTool(key)}>
+                        <span className="trace-tool-icon">🔧</span>
+                        <span className="trace-tool-name">{call.tool_name}</span>
+                        <span className="trace-tool-expand">{expandedTools.has(key) ? '▾' : '▸ collapsed'}</span>
+                      </div>
+                      {expandedTools.has(key) && (
+                        <div className="trace-tool-detail">
+                          <div className="trace-detail-label">Args</div>
+                          <pre className="trace-code trace-code-args">{JSON.stringify(call.args, null, 2)}</pre>
+                          {result && (
+                            <>
+                              <div className="trace-detail-label">Result</div>
+                              <pre className="trace-code trace-code-result">{result.result}</pre>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

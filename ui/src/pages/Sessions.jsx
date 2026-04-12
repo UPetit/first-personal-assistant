@@ -44,6 +44,7 @@ function TraceBlock({ runEvents }) {
   const executorName = planSummary?.steps?.[0]?.executor || planEvent?.executor || executorStart?.executor_name || ''
   const label = executorName ? `planner → ${executorName}` : 'trace'
   const model = executorStart?.model?.split(':').slice(1).join(':') || executorStart?.model || ''
+  const skillsLoaded = executorStart?.skills_loaded || []
   const reasoningSteps = executorDone?.reasoning_steps || []
 
   const toggleTool = idx => setExpandedTools(prev => {
@@ -102,6 +103,16 @@ function TraceBlock({ runEvents }) {
                 {reasoningSteps.slice(0, -1).map((step, i) => (
                   <div key={i} className="trace-reasoning-step">{step}</div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Skills loaded */}
+          {skillsLoaded.length > 0 && (
+            <div className="trace-planner-row">
+              <div className="trace-section-label">Skills</div>
+              <div className="trace-skills">
+                {skillsLoaded.map(s => <span key={s} className="trace-skill-chip">{s}</span>)}
               </div>
             </div>
           )}

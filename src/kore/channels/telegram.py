@@ -6,7 +6,10 @@ import re
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
+import asyncio
+
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -188,6 +191,7 @@ class TelegramChannel(Channel):
         self._get_jobs_text = get_jobs_text
         self._get_memory_text = get_memory_text
         self._active_sessions: dict[str, str] = {}  # uid → current session_id
+        self._typing_tasks: dict[str, asyncio.Task] = {}  # uid → typing loop task
 
         if not config.bot_token:
             raise ValueError(
@@ -207,12 +211,36 @@ class TelegramChannel(Channel):
 
     # ── Channel ABC ───────────────────────────────────────────────────────────
 
+    async def _typing_loop(self, chat_id: int) -> None:
+        """Send a typing action every 4 s until cancelled."""
+        try:
+            while True:
+                await self._app.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                await asyncio.sleep(4)
+        except asyncio.CancelledError:
+            pass
+
+    def _start_typing(self, uid: str, chat_id: int) -> None:
+        """Cancel any existing typing task for *uid* and start a fresh one."""
+        existing = self._typing_tasks.pop(uid, None)
+        if existing:
+            existing.cancel()
+        self._typing_tasks[uid] = asyncio.create_task(self._typing_loop(chat_id))
+
+    def _stop_typing(self, uid: str) -> None:
+        """Cancel and remove the typing task for *uid* if one exists."""
+        task = self._typing_tasks.pop(uid, None)
+        if task:
+            task.cancel()
+
     async def send(self, user_id: str, text: str) -> None:
         """Send *text* to *user_id*, splitting into ≤4096-char chunks.
 
         Converts Markdown to Telegram HTML.  Falls back to plain text if
         Telegram rejects the HTML (e.g. due to an edge-case formatting issue).
+        Cancels the typing indicator before sending.
         """
+        self._stop_typing(user_id)
         formatted = _md_to_telegram_html(text)
         for chunk in _chunk_text(formatted):
             try:
@@ -254,6 +282,9 @@ class TelegramChannel(Channel):
         logger.info("Telegram polling started")
 
     async def stop(self) -> None:
+        for task in self._typing_tasks.values():
+            task.cancel()
+        self._typing_tasks.clear()
         if self._app.updater and self._app.updater.running:
             await self._app.updater.stop()
         await self._app.stop()
@@ -309,6 +340,7 @@ class TelegramChannel(Channel):
         if not self._is_allowed(update.effective_user.id):
             return
         uid = str(update.effective_user.id)
+        self._start_typing(uid, update.effective_user.id)
         session_id = self._resolve_session(uid)
         msg = Message(
             text=update.message.text,

@@ -359,6 +359,71 @@ def test_registry_level2_empty_when_no_always_on(tmp_path):
     assert registry.build_level2_context() == ""
 
 
+# ── SkillAssignment / per-executor always ────────────────────────────────────
+
+def test_executor_config_skill_string_coerced_to_assignment():
+    """A plain string in the skills list is coerced to SkillAssignment(name=..., always=False)."""
+    from kore.config import ExecutorConfig
+    cfg = ExecutorConfig(model="anthropic:claude-haiku-4-5-20251001", prompt_file="p.md",
+                         tools=[], skills=["web-research", "memory-management"])
+    assert cfg.skills[0].name == "web-research"
+    assert cfg.skills[0].always is False
+    assert cfg.skills[1].name == "memory-management"
+
+
+def test_executor_config_skill_dict_parsed():
+    """A dict entry with always:true is parsed as SkillAssignment(always=True)."""
+    from kore.config import ExecutorConfig
+    cfg = ExecutorConfig(
+        model="anthropic:claude-haiku-4-5-20251001", prompt_file="p.md", tools=[],
+        skills=[{"name": "search-topic-online", "always": True}, "content-writer"],
+    )
+    assert cfg.skills[0].name == "search-topic-online"
+    assert cfg.skills[0].always is True
+    assert cfg.skills[1].name == "content-writer"
+    assert cfg.skills[1].always is False
+
+
+def test_registry_level2_respects_always_map(tmp_path):
+    """build_level2_context uses the always_map override, ignoring SKILL.md always_on flag."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin = tmp_path / "builtin"
+    user = tmp_path / "user"
+    builtin.mkdir(); user.mkdir()
+
+    # skill has always=False in SKILL.md but executor says always=True
+    write_skill_md(builtin, "search-web", always=False, body="Search instructions.")
+    write_skill_md(builtin, "content-writer", always=False, body="Writing instructions.")
+
+    registry = SkillRegistry(builtin, user)
+    skills = registry.get_skills_for_executor(["search-web", "content-writer"], available_tools=[])
+
+    # override: search-web=True, content-writer=False
+    always_map = {"search-web": True, "content-writer": False}
+    ctx = registry.build_level2_context(skills, always_map=always_map)
+
+    assert "Search instructions." in ctx
+    assert "Writing instructions." not in ctx
+
+
+def test_registry_level2_always_map_overrides_skill_always_on(tmp_path):
+    """A skill with always=True in SKILL.md is suppressed when always_map says False."""
+    from kore.skills.registry import SkillRegistry
+
+    builtin = tmp_path / "builtin"
+    user = tmp_path / "user"
+    builtin.mkdir(); user.mkdir()
+
+    write_skill_md(builtin, "memory-management", always=True, body="Memory body.")
+
+    registry = SkillRegistry(builtin, user)
+    skills = registry.get_skills_for_executor(["memory-management"], available_tools=[])
+
+    ctx = registry.build_level2_context(skills, always_map={"memory-management": False})
+    assert ctx == ""
+
+
 def test_registry_hot_reload(tmp_path):
     from kore.skills.registry import SkillRegistry
 

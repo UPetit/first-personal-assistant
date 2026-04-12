@@ -159,7 +159,8 @@ def test_executor_skills_accepted(tmp_path):
     cfg_path = tmp_path / "config.json"
     cfg_path.write_text(json.dumps(data))
     config = load_config(str(cfg_path))
-    assert config.agents.executors["general"].skills == ["web-research"]
+    from kore.config import SkillAssignment
+    assert config.agents.executors["general"].skills == [SkillAssignment(name="web-research", always=False)]
 
 
 def test_secrets_redacted_in_repr(tmp_path, monkeypatch):

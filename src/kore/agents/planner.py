@@ -32,20 +32,27 @@ def _load_prompt(filename: str) -> str:
 def _build_executors_summary(config: KoreConfig) -> str:
     names = list(config.agents.executors.keys())
     lines = [
-        f"Valid executor names (use EXACTLY one of these): {names}",
+        f"## Available executors",
+        f"",
+        f"Valid executor names — you MUST use EXACTLY one of: {names}",
+        f"Do NOT invent names like 'browser', 'assistant', 'chat', 'writer', or any other value not in the list above.",
         "",
-        "Tool-to-executor mapping (which executor to use when a task requires a given tool):",
-    ]
-    for name, cfg in config.agents.executors.items():
-        for tool in (cfg.tools or []):
-            lines.append(f"  {tool} → {name!r}")
-    lines += [
-        "",
-        "Executor descriptions:",
+        "## Executor descriptions",
     ]
     for name, cfg in config.agents.executors.items():
         desc = cfg.description or f"Executor for {name} tasks"
+        tools = ", ".join(cfg.tools or [])
         lines.append(f"- {name!r}: {desc}")
+        if tools:
+            lines.append(f"  Tools: {tools}")
+    lines += [
+        "",
+        "## Tool routing",
+        "Use the executor whose tool list contains what the step needs:",
+    ]
+    for name, cfg in config.agents.executors.items():
+        for tool in (cfg.tools or []):
+            lines.append(f"  {tool} → use {name!r}")
     return "\n".join(lines)
 
 

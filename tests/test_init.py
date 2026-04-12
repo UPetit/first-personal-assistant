@@ -68,3 +68,27 @@ def test_migrate_prints_nothing_to_migrate(kore_home, capsys):
     cmd_migrate()
     captured = capsys.readouterr()
     assert "nothing to migrate" in captured.out.lower()
+
+
+def test_init_creates_soul_md_stub(kore_home):
+    """`kore init` creates a SOUL.md stub with expected sections."""
+    cmd_init()
+    soul_path = kore_home / "SOUL.md"
+    assert soul_path.exists()
+    content = soul_path.read_text()
+    assert "## Identity" in content
+    assert "## Communication Style" in content
+    assert "## Values" in content
+    assert "## Anti-patterns" in content
+
+
+def test_init_creates_user_md_stub(kore_home):
+    """`kore init` creates a USER.md stub with expected sections."""
+    cmd_init()
+    user_path = kore_home / "USER.md"
+    assert user_path.exists()
+    content = user_path.read_text()
+    assert "## Basic Info" in content
+    assert "## Preferences" in content
+    assert "## Current Projects" in content
+    assert "## Priorities" in content

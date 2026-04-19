@@ -237,10 +237,23 @@ class SubAgentConfig(BaseModel):
 
 
 class AgentsConfig(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    """v2 agents schema: one primary + a dict of subagents."""
+    model_config = ConfigDict(extra="forbid")
 
-    planner: ExecutorConfig | None = None
-    executors: dict[str, ExecutorConfig] = {}
+    primary: PrimaryAgentConfig
+    subagents: dict[str, SubAgentConfig] = {}
+
+    @field_validator("subagents")
+    @classmethod
+    def only_known_subagents(cls, v: dict[str, SubAgentConfig]) -> dict[str, SubAgentConfig]:
+        allowed = {"deep_research", "draft_longform"}
+        unknown = set(v) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unknown subagent(s): {sorted(unknown)}. "
+                f"v2 supports only: {sorted(allowed)}"
+            )
+        return v
 
 
 class KoreConfig(BaseModel):
@@ -248,7 +261,7 @@ class KoreConfig(BaseModel):
 
     version: str
     llm: LLMConfig
-    agents: AgentsConfig = AgentsConfig()
+    agents: AgentsConfig | None = None
     tools: dict[str, ToolConfig] = {}
     security: SecurityConfig = SecurityConfig()
     ui: UIConfig = UIConfig()
@@ -298,6 +311,23 @@ def load_config(path: Path | str | None = None) -> KoreConfig:
 
     with open(resolved_path) as f:
         raw = json.load(f)
+
+    # Detect legacy v1 schema and raise with a migration pointer.
+    agents = raw.get("agents") or {}
+    legacy_keys = [k for k in ("planner", "executors") if k in agents]
+    if legacy_keys:
+        raise ConfigError(
+            f"Legacy v1 config keys present: agents.{legacy_keys}. "
+            "These were removed in the v2 primary-agent refactor. "
+            "Migrate to agents.primary + agents.subagents — see "
+            "docs/superpowers/specs/2026-04-19-primary-agent-refactor-design.md"
+        )
+
+    if "agents" in raw and "primary" not in agents:
+        raise ConfigError(
+            "agents.primary is required — see the v2 schema in "
+            "docs/superpowers/specs/2026-04-19-primary-agent-refactor-design.md"
+        )
 
     resolved = _resolve_env_vars(raw)
 

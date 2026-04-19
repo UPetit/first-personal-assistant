@@ -330,3 +330,81 @@ def test_usage_limits_override():
     assert cfg.usage_limits.tool_calls_limit == 12
     assert cfg.usage_limits.total_tokens_limit == 80_000
     assert cfg.usage_limits.request_limit == 30
+
+
+def test_agents_config_rejects_legacy_planner(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "planner": {"model": "anthropic:claude-sonnet-4-6", "prompt_file": "prompts/planner.md", "tools": []},
+        "executors": {}
+      }
+    }
+    """)
+    with pytest.raises(ConfigError) as exc:
+        load_config(cfg)
+    assert "agents.planner" in str(exc.value) or "removed" in str(exc.value)
+
+
+def test_agents_config_rejects_legacy_executors(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "executors": {"general": {"model": "anthropic:claude-sonnet-4-6", "prompt_file": "prompts/general.md", "tools": []}}
+      }
+    }
+    """)
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+
+def test_agents_config_accepts_new_schema(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "primary": {
+          "model": "anthropic:claude-sonnet-4-6",
+          "prompt": "prompts/primary.md"
+        },
+        "subagents": {
+          "deep_research": {
+            "model": "anthropic:claude-haiku-4-5-20251001",
+            "prompt": "prompts/deep_research.md",
+            "tools": ["web_search", "scrape_url", "memory_search"]
+          },
+          "draft_longform": {
+            "model": "anthropic:claude-sonnet-4-6",
+            "prompt": "prompts/draft_longform.md",
+            "tools": ["memory_search", "read_file"]
+          }
+        }
+      }
+    }
+    """)
+    loaded = load_config(cfg)
+    assert loaded.agents.primary.model == "anthropic:claude-sonnet-4-6"
+    assert "deep_research" in loaded.agents.subagents
+    assert "draft_longform" in loaded.agents.subagents
+
+
+def test_missing_primary_raises(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {}
+    }
+    """)
+    with pytest.raises(ConfigError) as exc:
+        load_config(cfg)
+    assert "primary" in str(exc.value)

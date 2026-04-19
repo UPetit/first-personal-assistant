@@ -18,7 +18,7 @@ models.ALLOW_MODEL_REQUESTS = False
 
 
 @pytest.fixture
-def subagent_config() -> SubAgentConfig:
+def subagent_config(test_env) -> SubAgentConfig:
     return SubAgentConfig(
         model="anthropic:claude-haiku-4-5-20251001",
         prompt="prompts/deep_research.md",

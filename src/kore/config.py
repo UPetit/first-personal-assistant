@@ -135,47 +135,6 @@ class ToolConfig(BaseModel):
     max_results: int = 5
 
 
-class SkillAssignment(BaseModel):
-    """A skill assigned to an executor, with an optional per-executor always-on override."""
-    model_config = ConfigDict(extra="ignore")
-
-    name: str
-    always: bool = False
-
-
-class ExecutorConfig(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    model: str
-    prompt_file: str
-    tools: list[str]
-    skills: list[SkillAssignment] = []
-
-    @field_validator("skills", mode="before")
-    @classmethod
-    def coerce_skills(cls, v: list) -> list:
-        """Allow plain strings alongside dicts; strings default to always=False."""
-        result = []
-        for item in v:
-            if isinstance(item, str):
-                result.append({"name": item, "always": False})
-            else:
-                result.append(item)
-        return result
-    description: str = ""           # One-line description shown to the planner.
-    max_retries: int = 3            # Pydantic AI retries on malformed output before raising.
-    shell_allowlist: list[str] = [] # Binaries this executor may run via run_command.
-
-    @field_validator("model")
-    @classmethod
-    def model_has_provider_prefix(cls, v: str) -> str:
-        if ":" not in v:
-            raise ValueError(
-                f"model string must have provider prefix (e.g. 'anthropic:claude-...'): {v!r}"
-            )
-        return v
-
-
 class UsageLimitsConfig(BaseModel):
     """Caps passed to Pydantic AI's UsageLimits on each agent run.
 

@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 from kore.agents.base import BaseAgent
-from kore.agents.planner import PlanResult, PlanStep
 from kore.llm.types import AgentResponse
 
 

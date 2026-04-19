@@ -11,7 +11,6 @@ from pydantic_ai.models.test import TestModel
 
 from kore.agents.base import BaseAgent
 from kore.agents.orchestrator import Orchestrator
-from kore.agents.planner import PlanResult
 from kore.channels.base import Message, noop_reply
 from kore.config import KoreConfig, LLMConfig
 from kore.gateway.queue import MessageQueue

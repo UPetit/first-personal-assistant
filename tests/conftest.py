@@ -7,13 +7,10 @@ from pydantic import SecretStr
 
 from kore.agents.deps import KoreDeps
 from kore.config import (
-    AgentsConfig,
     KoreConfig,
     LLMConfig,
     LLMProviderConfig,
-    SecurityConfig,
     ToolConfig,
-    UIConfig,
 )
 
 
@@ -48,39 +45,6 @@ def mock_deps(sample_config):
     Access pattern: ctx.deps.config — mirrors real RunContext where ctx.deps is the deps object.
     """
     return SimpleNamespace(deps=KoreDeps(config=sample_config))
-
-
-@pytest.fixture
-def sample_config_with_agents(sample_config):
-    """sample_config extended with planner and three executors for Phase 2 tests."""
-    from kore.config import AgentsConfig, SessionConfig, ExecutorConfig
-
-    planner_cfg = ExecutorConfig(
-        model="anthropic:claude-sonnet-4-6",
-        prompt_file="planner.md",
-        tools=[],
-        description="Plans and routes tasks to appropriate executors",
-    )
-    executors = {
-        "general": ExecutorConfig(
-            model="anthropic:claude-sonnet-4-6",
-            prompt_file="general.md",
-            tools=["web_search", "scrape_url", "read_file", "write_file", "get_current_time"],
-            skills=["*"],
-            description="Handles complex or mixed tasks requiring multiple capabilities",
-        ),
-        "search": ExecutorConfig(
-            model="anthropic:claude-haiku-4-5-20251001",
-            prompt_file="search.md",
-            tools=["web_search", "scrape_url", "get_current_time", "read_skill"],
-            skills=["web-research"],
-            description="Web research and information retrieval",
-        ),
-    }
-    return sample_config.model_copy(update={
-        "agents": AgentsConfig(planner=planner_cfg, executors=executors),
-        "session": SessionConfig(),
-    })
 
 
 @pytest.fixture

@@ -9,7 +9,6 @@ from kore.config import (
     AgentsConfig,
     ChannelsConfig,
     ConfigError,
-    ExecutorConfig,
     KoreConfig,
     LLMConfig,
     LLMProviderConfig,
@@ -123,46 +122,6 @@ def test_security_config_defaults():
     assert sec.queue_maxsize == 100
 
 
-def test_executor_max_retries_default():
-    """ExecutorConfig.max_retries defaults to 3."""
-    cfg = ExecutorConfig(model="anthropic:claude-sonnet-4-6", prompt_file="x.md", tools=[])
-    assert cfg.max_retries == 3
-
-
-def test_executor_max_retries_custom():
-    """ExecutorConfig.max_retries can be overridden."""
-    cfg = ExecutorConfig(model="anthropic:claude-sonnet-4-6", prompt_file="x.md", tools=[], max_retries=5)
-    assert cfg.max_retries == 5
-
-
-def test_planner_optional(tmp_path):
-    data = _minimal_config_dict()
-    data["agents"] = {}  # no planner block
-    cfg_path = tmp_path / "config.json"
-    cfg_path.write_text(json.dumps(data))
-    config = load_config(str(cfg_path))
-    assert config.agents.planner is None
-
-
-def test_executor_skills_accepted(tmp_path):
-    data = _minimal_config_dict()
-    data["agents"] = {
-        "executors": {
-            "general": {
-                "model": "anthropic:claude-haiku-4-5-20251001",
-                "prompt_file": "prompts/general.md",
-                "tools": ["web_search"],
-                "skills": ["web-research"],
-            }
-        }
-    }
-    cfg_path = tmp_path / "config.json"
-    cfg_path.write_text(json.dumps(data))
-    config = load_config(str(cfg_path))
-    from kore.config import SkillAssignment
-    assert config.agents.executors["general"].skills == [SkillAssignment(name="web-research", always=False)]
-
-
 def test_secrets_redacted_in_repr(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "super-secret-key")
     data = {
@@ -183,20 +142,6 @@ def test_session_config_defaults():
     assert cfg.compaction_model == "anthropic:claude-haiku-4-5-20251001"
     assert cfg.compaction_token_threshold == 6000
     assert cfg.keep_recent_turns == 10
-
-
-def test_executor_description_optional():
-    """ExecutorConfig.description is optional with default empty string."""
-    from kore.config import ExecutorConfig
-    cfg = ExecutorConfig(model="anthropic:claude-sonnet-4-6", prompt_file="x.md", tools=[])
-    assert cfg.description == ""
-    cfg2 = ExecutorConfig(
-        model="anthropic:claude-sonnet-4-6",
-        prompt_file="x.md",
-        tools=[],
-        description="Does things",
-    )
-    assert cfg2.description == "Does things"
 
 
 def test_skills_config_defaults():

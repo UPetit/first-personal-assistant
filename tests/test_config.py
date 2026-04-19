@@ -408,3 +408,38 @@ def test_missing_primary_raises(tmp_path):
     with pytest.raises(ConfigError) as exc:
         load_config(cfg)
     assert "primary" in str(exc.value)
+
+
+def test_unknown_subagent_rejected(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "primary": {"model": "anthropic:claude-sonnet-4-6", "prompt": "prompts/primary.md"},
+        "subagents": {
+          "email_classifier": {
+            "model": "anthropic:claude-haiku-4-5-20251001",
+            "prompt": "prompts/ec.md",
+            "tools": []
+          }
+        }
+      }
+    }
+    """)
+    with pytest.raises(ConfigError) as exc:
+        load_config(cfg)
+    assert "email_classifier" in str(exc.value)
+
+
+def test_agents_absent_loads_with_none(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}}
+    }
+    """)
+    loaded = load_config(cfg)
+    assert loaded.agents is None

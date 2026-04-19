@@ -29,14 +29,24 @@ async def read_skill(ctx: RunContext[KoreDeps], name: str) -> str:
 
     Use this to get detailed instructions for a skill listed in the
     Available Skills summary. Returns the full SKILL.md body.
+    Only skills assigned to the current executor may be read.
     """
     registry = ctx.deps.skill_registry
     if registry is None:
         return "[Error: skill registry not available]"
+
+    # Enforce per-executor skill access — only allow skills assigned to this executor.
+    allowed = ctx.deps.allowed_skill_names
+    if allowed is not None and name not in allowed:
+        return (
+            f"[SKILL NOT AUTHORIZED: '{name}' is not in this executor's assigned skills. "
+            f"Authorized skills: {allowed}]"
+        )
+
     skills = registry.all_skills()
     skill = next((s for s in skills if s.name == name), None)
     if skill is None:
-        available = [s.name for s in skills]
+        available = [s.name for s in skills if allowed is None or s.name in allowed]
         return f"[Error: skill '{name}' not found. Available: {available}]"
     return f"[SKILL: {skill.name}]\n{skill.body}"
 

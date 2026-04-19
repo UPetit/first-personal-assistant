@@ -114,7 +114,13 @@ class Orchestrator:
                 executor_name = step.executor if step.executor in self._config.agents.executors else "general"
                 executor_cfg = self._config.agents.executors.get(executor_name, self._config.agents.executors.get("general"))
 
-                # Build per-step deps with the executor's shell allowlist
+                # Build per-step deps with the executor's shell allowlist and skill access list.
+                # allowed_skill_names=None means unrestricted (wildcard executor config).
+                allowed_skills = (
+                    [a.name for a in executor_cfg.skills]
+                    if executor_cfg and executor_cfg.skills
+                    else None
+                )
                 step_deps = KoreDeps(
                     config=self._config,
                     core_memory=self._core_memory,
@@ -122,6 +128,7 @@ class Orchestrator:
                     retriever=self._retriever,
                     skill_registry=self._skill_registry,
                     shell_allowlist=executor_cfg.shell_allowlist if executor_cfg else [],
+                    allowed_skill_names=allowed_skills,
                 )
 
                 await self._emit({

@@ -7,6 +7,9 @@ Kore is a Python-native, Docker-first personal AI assistant platform. It uses a 
 ## Commands
 
 ```bash
+# First-time setup — bootstrap ~/.kore/ (SOUL.md, USER.md, config stubs)
+python -m kore.init
+
 # Run tests
 pytest
 
@@ -64,10 +67,11 @@ kore/
 │   ├── skills/                    # User-installed skills (ClawHub downloads, custom)
 │   └── files/                     # Sandboxed file storage for tools
 ├── skills/                        # Built-in skills (SKILL.md format, OpenClaw/Nanobot compatible)
-│   ├── web-research/SKILL.md      # Search strategy, source evaluation, synthesis
+│   ├── search-topic-online/SKILL.md  # Search strategy, source evaluation, synthesis
 │   ├── content-writer/SKILL.md    # LinkedIn, emails, summaries — tone, structure
 │   ├── memory-management/SKILL.md # When/how to use memory tools (always-on)
-│   └── skill-creator/SKILL.md     # Meta-skill: how to create new skills
+│   ├── skill-creator/SKILL.md     # Meta-skill: how to create new skills
+│   └── skill-vetter/SKILL.md      # Security vetting protocol before installing skills
 │   # email-management and daily-digest skills not yet implemented
 ├── src/
 │   └── kore/
@@ -103,6 +107,8 @@ kore/
 │       │   ├── file_rw.py         # Sandboxed file I/O
 │       │   ├── memory_tools.py    # core_memory_update, memory_search, memory_store
 │       │   ├── cron_tools.py      # cron_create, cron_list, cron_delete
+│       │   ├── skill_tools.py     # skill_search, read_skill, skill_install
+│       │   ├── shell.py           # Sandboxed run_shell (per-executor allowlist)
 │       │   └── custom/            # User-defined tools (registered via config)
 │       ├── memory/
 │       │   ├── core_memory.py     # Layer 1: JSON-based always-in-context memory
@@ -247,13 +253,22 @@ When asked to research a topic:
 
 **Skill visibility:** `BaseAgent` has a `skills_loaded: list[str]` attribute (set by `create_executor`) that records the names of skills injected at creation time. The orchestrator emits this list in `executor_start` trace events. Level 3 on-demand skill reads (agent calls `read_file` on a `SKILL.md` path) are also tagged as `skill_read` in `tool_call` trace events.
 
-**v1 built-in skills (implemented):** `web-research`, `content-writer`, `memory-management` (always-on), `skill-creator`, `skill-vetter` (security vetting protocol for skills before install). (`email-management` and `daily-digest` are planned but not yet written.) `summarize` (CLI-based URL/file summarizer, requires `summarize` bin) is a user-installed skill (`data/skills/`).
+**v1 built-in skills (implemented):** `search-topic-online`, `content-writer`, `memory-management` (always-on), `skill-creator`, `skill-vetter` (security vetting protocol for skills before install). (`email-management` and `daily-digest` are planned but not yet written.) `summarize` (CLI-based URL/file summarizer, requires `summarize` bin) is a user-installed skill (`data/skills/`).
+
+### Persona layer (SOUL.md / USER.md)
+
+Two Markdown files in `~/.kore/` are injected into every executor's system prompt at creation time (before the executor's own prompt):
+
+- **`SOUL.md`** — agent personality: tone, communication style, values, anti-patterns to avoid.
+- **`USER.md`** — user profile: name, timezone, role, current projects, priorities.
+
+`create_executor()` calls `_load_persona(kore_home)` which reads both files, joins them with `---`, and prepends the result to the executor's system prompt. Missing files are silently skipped. `kore init` creates stub versions of both. These files are local config (not in the repo).
 
 ### Tools
 
 - Tools are Python functions decorated with Pydantic AI's `@agent.tool` decorator. JSON schemas auto-generated from type hints and docstrings.
 - Custom tools in `kore/tools/` are registered to agents via the executor config.
-- v1 tools: `web_search` (Brave Search API — returns `[{title, url, snippet}]`), `scrape_url`, `read_file`, `write_file`, `core_memory_update`, `core_memory_delete`, `memory_search`, `memory_store`, `cron_create`, `cron_list`, `cron_delete`, `get_current_time`, `skill_search` (search ClawHub for skills), `skill_install` (install skill from ClawHub + auto-reload registry).
+- v1 tools: `web_search` (Brave Search API — returns `[{title, url, snippet}]`), `scrape_url`, `read_file`, `write_file`, `core_memory_update`, `core_memory_delete`, `memory_search`, `memory_store`, `cron_create`, `cron_list`, `cron_delete`, `get_current_time`, `skill_search` (search ClawHub for skills), `read_skill` (load assigned skill body — scoped to executor's `allowed_skill_names`), `skill_install` (install skill from ClawHub + auto-reload registry), `run_shell` (sandboxed shell — only binaries in executor's `shell_allowlist` may run).
 - Tool access per executor follows least privilege (configured in `config.json`).
 - Skills reference tools by name — the agent reads skill instructions and calls the appropriate tools.
 
@@ -286,7 +301,7 @@ async def memory_search(ctx: RunContext, query: str, max_results: int = 10) -> s
 - **Async everywhere.** All I/O (LLM calls, DB, HTTP, Telegram) uses asyncio. No sync blocking in the main loop.
 - **Pydantic for config.** `config.py` validates `config.json` using Pydantic v2 models. API keys are never in config — only env var names with `_env` suffix.
 - **System prompts in Markdown files.** `prompts/*.md` — editable without code changes.
-- **No shell execution tool.** Security decision. File I/O sandboxed to `~/.kore/files/`.
+- **Shell execution is allowlisted.** `run_shell` exists but each executor declares which binaries it may run via `shell_allowlist` in config. Default is empty (no shell access). File I/O sandboxed to `~/.kore/files/`.
 - **Structured logging.** JSON-formatted logs, filterable by agent/level.
 - **Type hints on everything.** Use `from __future__ import annotations` in all files.
 
@@ -370,17 +385,3 @@ These are deferred to v2+. Do not implement unless explicitly asked:
 - **PostgreSQL** (use SQLite for now)
 - **Tavily web search** (alternative to Brave Search)
 
-## Implementation order
-
-Every phase includes its tests. Code is not done until its tests pass.
-
-1. **Foundation** ✅ — Docker, config system, Pydantic AI setup with all providers (Anthropic, OpenAI, OpenRouter, Ollama), provider factory, base agent with tool registration, basic tools (Brave LLM Context Search, scrape, get_current_time). **Tests:** config validation, agent creation with `TestModel`, provider factory resolves all model string formats, tool schema generation from type hints, Brave Search with mocked HTTP.
-2. **Core pipeline** ✅ — Planner (structured `PlanResult` output, intent classification + executor routing), executors (general, search, writer, digest), orchestrator (planner → executor pipeline), session buffer with LLM-based compaction (`session/buffer.py`, `session/compactor.py`), file I/O tools (`read_file`, `write_file`, sandboxed to `~/.kore/files/`). **Tests:** planner routing via `TestModel`, executor tool-calling, orchestrator end-to-end pipeline, session buffer compaction triggers correctly, file I/O sandboxing.
-3. **Skills system** ✅ — SKILL.md loader (YAML frontmatter + Markdown body), skill registry with per-executor mapping and dependency checking, progressive loading (Level 1 summary XML always included, Level 2 always-on full body, Level 3 on-demand via `read_file`), ClawHub client (search, install, hot-reload after install). Built-in skills: `web-research`, `content-writer`, `memory-management` (always-on), `skill-creator`. **Tests:** SKILL.md parsing + frontmatter extraction, skill-to-executor mapping, ClawHub search mock, progressive loading token budget, hot-reload (install → registry picks up new skill → wildcard executor sees it).
-4. **Memory** ✅ — SQLite + FTS5 + sqlite-vec, core memory (JSON), event log, retrieval, extraction, memory tools, embedding cascade. **Tests:** core memory CRUD + token cap, event insert + hybrid search, temporal decay math, extraction from sample conversations, embedding fallback chain.
-5. **Channels & scheduler** ✅ — Telegram webhook adapter, asyncio CRON scheduler with `jobs.json` store, CRON tools (`cron_create`/`list`/`delete`), consolidation agent timer. **Tests:** Telegram message normalization + auth filtering, CRON job persistence + timezone, dynamic job creation/deletion via tools, consolidation cycle (promotion, contradiction, GC).
-6. **Web UI** ✅ — FastAPI dashboard endpoints, React pages, WebSocket log streaming. **Tests:** all API routes (auth, responses, errors), WebSocket connection lifecycle.
-   - **Skills page** (approved spec `docs/superpowers/specs/2026-03-24-skills-page-design.md`, not yet implemented): `GET /api/skills` → `{builtin: [SkillInfo], user: [SkillInfo]}`. `SkillInfo` includes `name, description, emoji, always_on, required_tools, required_bins, required_env, active, missing`. `active` is `false` when any bin/env dep is missing (tool deps are informational only). `GET /api/skills` calls `registry.reload()` on every request (Reload button just re-fetches). UI: card grid with always-on badge, tool/bin/env tags, amber warning for inactive skills. Empty workspace section shows hint. Skills nav item (`✦`) added between Agents and Memory.
-7. **Integration & hardening** ✅ — Full message-to-response integration tests, error handling, rate limiting, structured logging. **Tests:** full pipeline integration (message → plan → execute → memory → respond), failure paths (API down, auth rejected, token limit, empty results).
-8. **Session debugger** ✅ — `TraceStore` (SQLite, 7-day TTL at `~/.kore/kore.db`) replaces in-memory EventBus. Orchestrator emits typed events (`session_start`, `plan_result`, `executor_start`, `tool_call`, `tool_result`, `executor_done`, `session_done`). REST polling (`GET /api/sessions/{id}/trace`) replaces WebSocket. UI Sessions page shows live trace timeline per turn. `/new` Telegram command starts a fresh session; `_resolve_session()` auto-resumes latest session after server restart.
-- **Transient API errors:** `_run_with_retry()` in `agents/base.py` retries 529/503 with 2 s → 4 s → 8 s backoff before re-raising.

@@ -89,17 +89,24 @@ class SkillRegistry:
         lines.append("</skills>")
         return "\n".join(lines)
 
-    def build_level2_context(self, skills: list[SkillMeta] | None = None) -> str:
+    def build_level2_context(
+        self,
+        skills: list[SkillMeta] | None = None,
+        always_map: dict[str, bool] | None = None,
+    ) -> str:
         """Return full Markdown body of always-on skills (Level 2).
 
-        If *skills* is given, only always-on skills in that list are included.
-        If *skills* is None, all loaded always-on skills are included.
+        If *skills* is given, only skills in that list are considered.
+        If *skills* is None, all loaded skills are considered.
+        *always_map* overrides the skill's own ``always_on`` flag per executor
+        assignment (key = skill name, value = True/False). When provided, a
+        skill is included iff ``always_map.get(name, skill.always_on)`` is True.
         Returns empty string if no always-on skills match.
         """
         source = skills if skills is not None else list(self._skills.values())
         parts = [
             f"## Skill: {s.name}\n\n{s.body}"
             for s in source
-            if s.always_on
+            if (always_map.get(s.name, s.always_on) if always_map is not None else s.always_on)
         ]
         return "\n\n---\n\n".join(parts)

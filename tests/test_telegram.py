@@ -465,6 +465,75 @@ async def test_cmd_new_blocks_unknown_user():
     update.message.reply_text.assert_not_called()
 
 
+# ── typing indicator ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_on_message_starts_typing_indicator():
+    """Receiving a message must kick off a typing action loop."""
+    import asyncio
+    from kore.channels.telegram import TelegramChannel
+    from kore.config import TelegramConfig
+    from kore.gateway.queue import MessageQueue
+    from pydantic import SecretStr
+
+    cfg = TelegramConfig(bot_token=SecretStr("fake:TOKEN"), allowed_user_ids=[111])
+    queue = MessageQueue()
+
+    with patch("kore.channels.telegram.Application") as mock_app_cls:
+        mock_app = MagicMock()
+        mock_app.bot.send_chat_action = AsyncMock()
+        mock_app.bot.send_message = AsyncMock()
+        mock_app_cls.builder.return_value.token.return_value.build.return_value = mock_app
+        channel = TelegramChannel(cfg)
+        channel._app = mock_app
+        channel._queue = queue
+
+        update = _make_update("Hello", user_id=111)
+        await channel._on_message(update, MagicMock())
+
+        # Give the loop a chance to fire once
+        await asyncio.sleep(0)
+
+    assert mock_app.bot.send_chat_action.call_count >= 1
+    call_kwargs = mock_app.bot.send_chat_action.call_args
+    assert call_kwargs.kwargs.get("chat_id") == 111 or call_kwargs.args[0] == 111
+
+
+@pytest.mark.asyncio
+async def test_send_cancels_typing_indicator():
+    """Calling send() must cancel the typing task so it stops looping."""
+    import asyncio
+    from kore.channels.telegram import TelegramChannel
+    from kore.config import TelegramConfig
+    from kore.gateway.queue import MessageQueue
+    from pydantic import SecretStr
+
+    cfg = TelegramConfig(bot_token=SecretStr("fake:TOKEN"), allowed_user_ids=[111])
+    queue = MessageQueue()
+
+    with patch("kore.channels.telegram.Application") as mock_app_cls:
+        mock_app = MagicMock()
+        mock_app.bot.send_chat_action = AsyncMock()
+        mock_app.bot.send_message = AsyncMock()
+        mock_app_cls.builder.return_value.token.return_value.build.return_value = mock_app
+        channel = TelegramChannel(cfg)
+        channel._app = mock_app
+        channel._queue = queue
+
+        update = _make_update("Hello", user_id=111)
+        await channel._on_message(update, MagicMock())
+        await asyncio.sleep(0)
+
+        task = channel._typing_tasks.get("111")
+        assert task is not None
+
+        await channel.send("111", "Reply!")
+        await asyncio.sleep(0)  # let cancellation propagate
+
+        assert task.cancelled() or task.done()
+        assert "111" not in channel._typing_tasks
+
+
 def test_is_allowed_logs_rejection_at_debug(caplog):
     """Rejecting an unknown user_id must emit a DEBUG log."""
     channel = _make_channel([111, 222])

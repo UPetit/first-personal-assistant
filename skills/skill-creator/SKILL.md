@@ -1,5 +1,5 @@
 ---
-name: skill_creator
+name: skill-creator
 description: Create new SKILL.md files in the correct format for Kore and ClawHub compatibility
 metadata: '{"kore":{"emoji":"🛠️","always":false,"requires":{"tools":["write_file"]}}}'
 ---

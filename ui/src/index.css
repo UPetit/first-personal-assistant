@@ -604,6 +604,12 @@ body {
 .trace-step { padding-left: 8px; border-left: 2px solid #3a3a5c; }
 .trace-reasoning-step { padding: 4px 6px; background: #1a1a2e; border-radius: 3px; font-size: 11px; color: #8888b0; white-space: pre-wrap; }
 .trace-executor-name { color: #a0a0ff; font-weight: 500; }
+.trace-executor-block { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px; margin-top: 8px; }
+.trace-executor-block:first-of-type { border-top: none; margin-top: 0; }
+.trace-executor-header { display: flex; align-items: center; gap: 8px; padding: 0 12px 6px; }
+.trace-executor-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #a0a0ff; }
+.trace-skills { display: flex; flex-wrap: wrap; gap: 4px; }
+.trace-skill-chip { font-size: 10px; color: #70c090; background: rgba(112,192,112,0.1); border: 1px solid rgba(112,192,112,0.25); padding: 1px 7px; border-radius: 10px; }
 .trace-tool-item { border-bottom: 1px solid #1a1a28; }
 .trace-tool-item:last-child { border-bottom: none; }
 .trace-tool-header { padding: 7px 12px; display: flex; align-items: center; gap: 8px; cursor: pointer; transition: background 0.1s; }

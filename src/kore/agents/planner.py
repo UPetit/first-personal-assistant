@@ -32,20 +32,39 @@ def _load_prompt(filename: str) -> str:
 def _build_executors_summary(config: KoreConfig) -> str:
     names = list(config.agents.executors.keys())
     lines = [
-        f"Valid executor names (use EXACTLY one of these): {names}",
+        f"## Available executors",
+        f"",
+        f"Valid executor names — you MUST use EXACTLY one of: {names}",
+        f"Do NOT invent names like 'browser', 'assistant', 'chat', 'writer', or any other value not in the list above.",
         "",
-        "Tool-to-executor mapping (which executor to use when a task requires a given tool):",
-    ]
-    for name, cfg in config.agents.executors.items():
-        for tool in (cfg.tools or []):
-            lines.append(f"  {tool} → {name!r}")
-    lines += [
-        "",
-        "Executor descriptions:",
+        "## Executor descriptions",
     ]
     for name, cfg in config.agents.executors.items():
         desc = cfg.description or f"Executor for {name} tasks"
+        tools = ", ".join(cfg.tools or [])
         lines.append(f"- {name!r}: {desc}")
+        if tools:
+            lines.append(f"  Tools: {tools}")
+    lines += [
+        "",
+        "## Tool routing",
+        "Use the executor whose tool list contains what the step needs:",
+    ]
+    for name, cfg in config.agents.executors.items():
+        for tool in (cfg.tools or []):
+            lines.append(f"  {tool} → use {name!r}")
+    lines += [
+        "",
+        "## Routing examples — map task descriptions to executor names",
+        "  'Browse this URL / go to X / scrape / check this page' → look for executor with scrape_url",
+        "  'Search the web / find recent info / look up X online' → look for executor with web_search",
+        "  'Write / draft / compose / summarise text' → look for executor with memory/writing tools",
+        "  'Remember / save / recall / what did I say about X' → look for executor with memory tools",
+        "",
+        "CRITICAL: Never invent executor names based on the task description.",
+        "The task may say 'browse' or 'search' — that is the task, not the executor name.",
+        f"The ONLY valid executor names are: {list(config.agents.executors.keys())}",
+    ]
     return "\n".join(lines)
 
 

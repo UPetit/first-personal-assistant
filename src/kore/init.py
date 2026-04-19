@@ -11,6 +11,7 @@ from kore.config import KORE_HOME
 
 _CONFIG_TEMPLATE = {
     "version": "1.0.0",
+    "debug": {"session_tracing": True},
     "llm": {
         "providers": {
             "anthropic": {"api_key_env": "ANTHROPIC_API_KEY"},
@@ -33,14 +34,21 @@ _CONFIG_TEMPLATE = {
                 "model": "anthropic:claude-sonnet-4-6",
                 "prompt_file": "general.md",
                 "tools": ["web_search", "scrape_url", "get_current_time", "read_skill", "core_memory_update", "core_memory_delete", "memory_search", "memory_store"],
-                "skills": ["content_writer", "memory_management", "skill_vetter", "skill_creator", "summarize"],
+                "skills": [
+                    {"name": "search-topic-online"},
+                    {"name": "content-writer"},
+                    {"name": "memory-management", "always": True},
+                    {"name": "skill-vetter"},
+                    {"name": "skill-creator"},
+                    {"name": "summarize"},
+                ],
                 "description": "Handles complex or mixed tasks requiring multiple capabilities",
             },
             "search": {
                 "model": "anthropic:claude-haiku-4-5-20251001",
                 "prompt_file": "search.md",
                 "tools": ["web_search", "scrape_url", "get_current_time", "read_skill"],
-                "skills": ["web_research", "summarize"],
+                "skills": [{"name": "search-topic-online", "always": True}, {"name": "summarize"}],
                 "description": "Web research and information retrieval",
             }
         },
@@ -55,7 +63,6 @@ _CONFIG_TEMPLATE = {
     "channels": {
         "telegram": {
             "bot_token_env": "TELEGRAM_BOT_TOKEN",
-            "webhook_url_env": "TELEGRAM_WEBHOOK_URL",
             "allowed_user_ids": [],
         }
     },
@@ -68,18 +75,55 @@ _CONFIG_TEMPLATE = {
         "event_log": {"vector_weight": 0.7, "bm25_weight": 0.3, "top_k": 10},
         "consolidation": {"model": "anthropic:claude-haiku-4-5-20251001", "interval_minutes": 30},
     },
-    "security": {"max_tool_calls_per_request": 15},
+    "security": {"max_tool_calls_per_request": 8},
     "ui": {"port": 8000, "host": "0.0.0.0"},
 }
 
 _JOBS_TEMPLATE = {"jobs": []}
+
+_SOUL_TEMPLATE = """\
+<!-- Fill in this file to define Kore's personality. Leave sections empty to skip them. -->
+
+## Identity
+<!-- Who is Kore? One sentence describing the assistant's character. -->
+
+## Communication Style
+<!-- Tone, response length defaults, formatting preferences. -->
+<!-- Example: Direct and concise. Default to 2-3 sentences. Use bullet points for lists. -->
+
+## Values
+<!-- What Kore prioritizes when trade-offs arise. -->
+<!-- Example: Accuracy over speed. Honesty over politeness. -->
+
+## Anti-patterns
+<!-- Behaviors and phrases Kore avoids. -->
+<!-- Example: Never start a response with "Certainly!" or "Great question!". -->
+"""
+
+_USER_TEMPLATE = """\
+<!-- Fill in this file to tell Kore about you. Leave sections empty to skip them. -->
+
+## Basic Info
+<!-- Name, location, timezone, what you do. -->
+
+## Preferences
+<!-- How you like to receive information. Response style, verbosity, format. -->
+
+## Current Projects
+<!-- What you are working on right now. Brief description per project. -->
+
+## Priorities
+<!-- What matters most to you right now. -->
+"""
 
 _ENV_EXAMPLE = """\
 # Required
 ANTHROPIC_API_KEY=your-anthropic-api-key
 BRAVE_API_KEY=your-brave-search-api-key
 TELEGRAM_BOT_TOKEN=your-telegram-bot-token
-TELEGRAM_WEBHOOK_URL=https://your-domain.com/webhook
+
+# Optional — set to enable webhook mode (production); omit to use polling (local dev)
+# TELEGRAM_WEBHOOK_URL=https://your-domain.com/webhook
 
 # Optional — only needed if using alternative LLM providers
 OPENAI_API_KEY=your-openai-or-openrouter-api-key
@@ -120,11 +164,15 @@ def cmd_init() -> None:
     _write_if_absent(home / "config.json", json.dumps(_CONFIG_TEMPLATE, indent=2))
     _write_if_absent(home / "data" / "jobs.json", json.dumps(_JOBS_TEMPLATE, indent=2))
     _write_if_absent(home / ".env.example", _ENV_EXAMPLE)
+    _write_if_absent(home / "SOUL.md", _SOUL_TEMPLATE)
+    _write_if_absent(home / "USER.md", _USER_TEMPLATE)
 
     print("\nDone. Next steps:")
     print(f"  1. Edit {home / 'config.json'} — set your model preferences")
     print(f"  2. Copy {home / '.env.example'} → {home / '.env'} and fill in API keys")
-    print("  3. Run: kore gateway")
+    print(f"  3. Edit {home / 'SOUL.md'} — define Kore's personality (optional)")
+    print(f"  4. Edit {home / 'USER.md'} — tell Kore about yourself (optional)")
+    print("  5. Run: kore gateway")
 
 
 def cmd_migrate() -> None:

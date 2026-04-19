@@ -1,5 +1,5 @@
 ---
-name: content_writer
+name: content-writer
 description: Write clear, audience-appropriate content — LinkedIn posts, emails, summaries, and documents
 metadata: '{"kore":{"emoji":"✍️","always":false,"requires":{"tools":[]}}}'
 ---

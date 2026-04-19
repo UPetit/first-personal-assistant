@@ -29,7 +29,6 @@ class CreateJobRequest(BaseModel):
     job_id: str
     schedule: str
     prompt: str
-    executor: str = "general"
     timezone: str | None = None
 
 
@@ -41,7 +40,7 @@ async def create_job(body: CreateJobRequest, request: Request) -> dict[str, str]
     try:
         scheduler.add_job(
             body.job_id, body.schedule, body.prompt,
-            source="ui", executor=body.executor, timezone=body.timezone,
+            source="ui", timezone=body.timezone,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

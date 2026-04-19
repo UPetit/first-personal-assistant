@@ -67,6 +67,12 @@ def _job_from_dict(d: dict) -> CronJob:
             dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC)
 
+    if "executor" in d:
+        logger.warning(
+            "Cron job %r has legacy 'executor' field — ignored in v2 (all jobs fire through primary).",
+            d.get("id", "<unknown>"),
+        )
+
     return CronJob(
         id=d["id"],
         schedule=d["schedule"],
@@ -131,7 +137,6 @@ class KoreCronScheduler:
         cron_expr: str,
         prompt: str,
         source: str = "ui",
-        executor: str = "general",
         timezone: str | None = None,
     ) -> str:
         """Add or replace a cron job. Returns job_id.
@@ -148,7 +153,8 @@ class KoreCronScheduler:
             schedule=cron_expr,
             prompt=prompt,
             source=source,
-            executor=executor,
+            # executor kept as dataclass default ("general") for legacy jobs.json compat;
+            # no longer used for routing in v2 — all jobs fire through the primary agent.
             tz=timezone,  # store only what the user explicitly passed
             enabled=True,
             next_run_at=next_run,

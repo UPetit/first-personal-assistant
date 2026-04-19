@@ -23,7 +23,6 @@ async def cron_create(
     job_id: str,
     schedule: str,
     prompt: str,
-    executor: str = "general",
     timezone: str | None = None,
 ) -> str:
     """Create or replace a scheduled cron job.
@@ -31,8 +30,7 @@ async def cron_create(
     Args:
         job_id: Unique identifier (e.g. 'daily_digest')
         schedule: 5-field cron expression (e.g. '0 8 * * *' for 8am daily)
-        prompt: Message to send when the job fires
-        executor: Executor to handle the message (default: 'general')
+        prompt: Message to send when the job fires (handled by the primary agent)
         timezone: IANA timezone string (e.g. 'Europe/Paris'); defaults to system timezone
 
     Returns:
@@ -41,8 +39,7 @@ async def cron_create(
     if _scheduler is None:
         return "Error: scheduler not initialized"
     try:
-        _scheduler.add_job(job_id, schedule, prompt, source="telegram",
-                           executor=executor, timezone=timezone)
+        _scheduler.add_job(job_id, schedule, prompt, source="telegram", timezone=timezone)
         return f"Job '{job_id}' scheduled: {schedule}"
     except Exception as e:
         return f"Error scheduling job: {e}"

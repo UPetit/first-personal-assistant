@@ -123,3 +123,9 @@ async def memory_deps(tmp_path, sample_config):
     )
     yield SimpleNamespace(deps=deps)
     await engine.dispose()
+
+
+@pytest.fixture
+def koredeps(sample_config):
+    from kore.agents.deps import KoreDeps
+    return KoreDeps(config=sample_config)

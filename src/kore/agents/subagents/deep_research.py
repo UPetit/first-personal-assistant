@@ -9,7 +9,7 @@ from typing import Any
 from pydantic_ai import Agent, RunContext, UsageLimits
 
 from kore.agents.deps import KoreDeps
-from kore.config import SubAgentConfig
+from kore.config import KoreConfig, SubAgentConfig
 from kore.llm.provider import get_model
 from kore.llm.types import ResearchReport
 from kore.tools.registry import get_tools
@@ -26,10 +26,13 @@ def _load_prompt(filename: str) -> str:
 def build_deep_research_agent(
     config: SubAgentConfig,
     *,
+    kore_config: KoreConfig,
     skill_registry: Any = None,
-    kore_config: Any = None,
 ) -> Agent[KoreDeps, ResearchReport]:
     """Build the deep_research Pydantic AI Agent.
+
+    Caller must pass ``kore_config`` so model auth flows through Kore's provider
+    config rather than ambient env vars.
 
     The returned agent has:
     - output_type = ResearchReport (structured return contract)
@@ -41,7 +44,7 @@ def build_deep_research_agent(
     import kore.tools.scrape        # noqa: F401
     import kore.tools.memory_tools  # noqa: F401
 
-    model = get_model(config.model, kore_config) if kore_config else None
+    model = get_model(config.model, kore_config)
     prompt = _load_prompt(Path(config.prompt).name)
 
     if skill_registry is not None and config.skills:
@@ -56,7 +59,7 @@ def build_deep_research_agent(
     tools = get_tools(config.tools)
 
     agent: Agent[KoreDeps, ResearchReport] = Agent(
-        model or config.model,  # pydantic-ai accepts a plain model string too
+        model,
         system_prompt=prompt,
         tools=tools,
         output_type=ResearchReport,

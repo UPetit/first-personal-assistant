@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic_ai import models
-from pydantic_ai.models.test import TestModel
 
 from kore.agents.deps import KoreDeps
 from kore.agents.subagents.deep_research import (
@@ -11,10 +9,6 @@ from kore.agents.subagents.deep_research import (
 )
 from kore.config import SubAgentConfig, UsageLimitsConfig
 from kore.llm.types import ResearchReport, Source
-
-
-# Allow TestModel to produce non-anthropic-formatted responses inside tests.
-models.ALLOW_MODEL_REQUESTS = False
 
 
 @pytest.fixture
@@ -31,8 +25,10 @@ def subagent_config(test_env) -> SubAgentConfig:
 
 
 @pytest.mark.asyncio
-async def test_build_deep_research_agent_sets_result_type(subagent_config, koredeps):
-    agent = build_deep_research_agent(subagent_config, skill_registry=None)
+async def test_build_deep_research_agent_sets_result_type(subagent_config, koredeps, sample_config):
+    agent = build_deep_research_agent(
+        subagent_config, kore_config=sample_config, skill_registry=None
+    )
     assert agent.output_type is ResearchReport  # pydantic-ai attribute
 
 

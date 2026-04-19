@@ -77,11 +77,10 @@ def build_primary(
     import kore.tools.scrape        # noqa: F401
     import kore.tools.time_tool     # noqa: F401
     import kore.tools.memory_tools  # noqa: F401
-    for mod in ("file_rw", "cron_tools", "skill_tools", "shell"):
-        try:
-            __import__(f"kore.tools.{mod}")
-        except ImportError:
-            pass
+    import kore.tools.file_rw       # noqa: F401
+    import kore.tools.cron_tools    # noqa: F401
+    import kore.tools.skill_tools   # noqa: F401
+    import kore.tools.shell         # noqa: F401
 
     kore_home = kore_home or _DEFAULT_KORE_HOME
     prompt = _load_prompt(Path(primary_config.prompt).name)
@@ -140,6 +139,15 @@ def build_primary(
             )
         )
 
+    # --- Orchestrator metadata contract ---
+    # The three `_kore_*` attributes below are the public contract read by the
+    # orchestrator (see kore/agents/orchestrator.py). The underscore prefix scopes
+    # these attributes within Kore's namespace on the foreign pydantic-ai Agent
+    # class to avoid collisions with upstream attributes. Removing or renaming
+    # any of these is a breaking change to the orchestrator.
+    #   _kore_skills_loaded: list[str]   - names of skills injected at build time
+    #   _kore_model_string: str          - the original provider:model string
+    #   _kore_usage_limits: UsageLimits  - caps applied to each primary run
     agent._kore_skills_loaded = injected_skills  # type: ignore[attr-defined]
     agent._kore_model_string = primary_config.model  # type: ignore[attr-defined]
     agent._kore_usage_limits = _usage_limits(primary_config.usage_limits)  # type: ignore[attr-defined]

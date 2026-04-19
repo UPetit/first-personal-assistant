@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic_ai import UsageLimits
 
 from kore.agents.primary import build_primary
 from kore.config import PrimaryAgentConfig, SubAgentConfig
@@ -86,3 +87,43 @@ async def test_primary_missing_persona_is_silent(sample_config, tmp_path):
     prompts = agent._system_prompts  # type: ignore[attr-defined]
     combined = "\n".join(prompts)
     assert combined
+
+
+@pytest.mark.asyncio
+async def test_primary_kore_metadata_attributes(sample_config, tmp_path):
+    kore_home = tmp_path / "kore"
+    kore_home.mkdir()
+
+    agent = build_primary(
+        primary_config=_primary_cfg(),
+        subagents={},
+        skill_registry=None,
+        kore_config=sample_config,
+        kore_home=kore_home,
+    )
+
+    assert agent._kore_skills_loaded == []  # type: ignore[attr-defined]
+    assert agent._kore_model_string == "anthropic:claude-sonnet-4-6"  # type: ignore[attr-defined]
+    limits = agent._kore_usage_limits  # type: ignore[attr-defined]
+    assert isinstance(limits, UsageLimits)
+    assert limits.request_limit == 30
+    assert limits.total_tokens_limit == 200_000
+    assert limits.tool_calls_limit == 25
+
+
+@pytest.mark.asyncio
+async def test_primary_single_subagent_registration_is_independent(sample_config, tmp_path):
+    kore_home = tmp_path / "kore"
+    kore_home.mkdir()
+
+    agent = build_primary(
+        primary_config=_primary_cfg(),
+        subagents={"deep_research": _research_cfg()},
+        skill_registry=None,
+        kore_config=sample_config,
+        kore_home=kore_home,
+    )
+
+    registered_tools = {t.name for t in agent._function_toolset.tools.values()}  # type: ignore[attr-defined]
+    assert "deep_research" in registered_tools
+    assert "draft_longform" not in registered_tools

@@ -48,6 +48,8 @@ def span_event(
     - type: the EventType string value
     - session_id: conversation/session identifier
     - plus any keys in *extra*
+
+    Raises ValueError if extra contains any of: type, kind, session_id, span_id, parent_span_id.
     """
     event: dict[str, Any] = {
         "type": type_.value,
@@ -57,5 +59,11 @@ def span_event(
         "parent_span_id": parent_span_id,
     }
     if extra:
+        reserved = {"type", "kind", "session_id", "span_id", "parent_span_id"}
+        overlap = reserved & extra.keys()
+        if overlap:
+            raise ValueError(
+                f"span_event: extra cannot override reserved keys: {sorted(overlap)}"
+            )
         event.update(extra)
     return event

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from kore.gateway.trace_events import (
     EventKind,
     EventType,
@@ -41,3 +43,14 @@ def test_span_event_child_carries_parent():
     assert ev["parent_span_id"] == "PARENT-SPAN-ID"
     assert ev["kind"] == "tool"
     assert ev["tool_name"] == "memory_search"
+
+
+def test_span_event_rejects_reserved_keys_in_extra():
+    with pytest.raises(ValueError, match="reserved"):
+        span_event(
+            type_=EventType.TOOL_CALL,
+            kind=EventKind.TOOL,
+            session_id="s1",
+            parent_span_id=None,
+            extra={"type": "sneaky_override"},
+        )

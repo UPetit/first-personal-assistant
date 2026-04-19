@@ -278,3 +278,55 @@ def test_debug_session_tracing_can_be_enabled():
     from kore.config import DebugConfig
     cfg = DebugConfig(session_tracing=True)
     assert cfg.session_tracing is True
+
+
+def test_usage_limits_defaults():
+    from kore.config import UsageLimitsConfig
+    cfg = UsageLimitsConfig()
+    assert cfg.request_limit == 30
+    assert cfg.total_tokens_limit == 200_000
+    assert cfg.tool_calls_limit == 25
+
+
+def test_primary_agent_config_requires_model_and_prompt():
+    from kore.config import PrimaryAgentConfig, UsageLimitsConfig
+    cfg = PrimaryAgentConfig(
+        model="anthropic:claude-sonnet-4-6",
+        prompt="prompts/primary.md",
+    )
+    assert cfg.tools == ["*"]
+    assert cfg.skills == ["*"]
+    assert cfg.shell_allowlist == []
+    assert cfg.usage_limits == UsageLimitsConfig()
+
+
+def test_primary_agent_config_rejects_model_without_prefix():
+    from kore.config import PrimaryAgentConfig
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        PrimaryAgentConfig(model="claude-sonnet", prompt="prompts/primary.md")
+
+
+def test_subagent_config_narrow_defaults():
+    from kore.config import SubAgentConfig
+    cfg = SubAgentConfig(
+        model="anthropic:claude-haiku-4-5-20251001",
+        prompt="prompts/deep_research.md",
+        tools=["web_search", "scrape_url"],
+        skills=["search-topic-online"],
+    )
+    assert cfg.shell_allowlist == []
+    assert cfg.usage_limits.tool_calls_limit == 25
+
+
+def test_usage_limits_override():
+    from kore.config import SubAgentConfig
+    cfg = SubAgentConfig(
+        model="anthropic:claude-haiku-4-5-20251001",
+        prompt="prompts/deep_research.md",
+        tools=["web_search"],
+        usage_limits={"tool_calls_limit": 12, "total_tokens_limit": 80_000},
+    )
+    assert cfg.usage_limits.tool_calls_limit == 12
+    assert cfg.usage_limits.total_tokens_limit == 80_000
+    assert cfg.usage_limits.request_limit == 30

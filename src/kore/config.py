@@ -176,6 +176,66 @@ class ExecutorConfig(BaseModel):
         return v
 
 
+class UsageLimitsConfig(BaseModel):
+    """Caps passed to Pydantic AI's UsageLimits on each agent run.
+
+    These protect against runaway cost. Subagent tokens propagate via ctx.usage
+    so a primary's limit covers the whole run tree.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    request_limit: int = 30          # max LLM requests per run
+    total_tokens_limit: int = 200_000
+    tool_calls_limit: int = 25
+
+
+class PrimaryAgentConfig(BaseModel):
+    """The single conversational agent that runs every turn."""
+    model_config = ConfigDict(extra="ignore")
+
+    model: str
+    prompt: str                                # path to prompt markdown, relative to project root
+    tools: list[str] = ["*"]                   # "*" = all registered tools
+    skills: list[str] = ["*"]                  # "*" = all discovered skills; plain strings only (no always-override here)
+    shell_allowlist: list[str] = []
+    usage_limits: UsageLimitsConfig = UsageLimitsConfig()
+    max_retries: int = 3
+
+    @field_validator("model")
+    @classmethod
+    def model_has_provider_prefix(cls, v: str) -> str:
+        if ":" not in v:
+            raise ValueError(
+                f"model string must have provider prefix (e.g. 'anthropic:claude-...'): {v!r}"
+            )
+        return v
+
+
+class SubAgentConfig(BaseModel):
+    """A narrow subagent exposed as an @agent.tool on the primary.
+
+    Currently only 'deep_research' and 'draft_longform' are supported in v2.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    model: str
+    prompt: str
+    tools: list[str]
+    skills: list[str] = []
+    shell_allowlist: list[str] = []
+    usage_limits: UsageLimitsConfig = UsageLimitsConfig()
+    max_retries: int = 3
+
+    @field_validator("model")
+    @classmethod
+    def model_has_provider_prefix(cls, v: str) -> str:
+        if ":" not in v:
+            raise ValueError(
+                f"model string must have provider prefix (e.g. 'anthropic:claude-...'): {v!r}"
+            )
+        return v
+
+
 class AgentsConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

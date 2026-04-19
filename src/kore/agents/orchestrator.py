@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -104,9 +105,6 @@ class Orchestrator:
             primary_message = f"{context_prefix}{message}" if context_prefix else message
 
             primary_cfg = self._config.agents.primary  # type: ignore[union-attr]
-            allowed_skills = (
-                list(primary_cfg.skills) if primary_cfg.skills else None
-            )
             deps = KoreDeps(
                 config=self._config,
                 core_memory=self._core_memory,
@@ -114,7 +112,7 @@ class Orchestrator:
                 retriever=self._retriever,
                 skill_registry=self._skill_registry,
                 shell_allowlist=list(primary_cfg.shell_allowlist),
-                allowed_skill_names=allowed_skills,
+                allowed_skill_names=None,  # primary is unrestricted
             )
 
             primary_span = new_span_id()
@@ -132,6 +130,11 @@ class Orchestrator:
                     extra={
                         "model": model_string,
                         "skills_loaded": skills_loaded,
+                        "usage_limits": {
+                            "request_limit": primary_cfg.usage_limits.request_limit,
+                            "total_tokens_limit": primary_cfg.usage_limits.total_tokens_limit,
+                            "tool_calls_limit": primary_cfg.usage_limits.tool_calls_limit,
+                        },
                     },
                 )
             )
@@ -143,14 +146,34 @@ class Orchestrator:
             if usage_limits is not None:
                 run_kwargs["usage_limits"] = usage_limits
 
-            result = await self._primary.run(primary_message, **run_kwargs)
+            try:
+                result = await self._primary.run(primary_message, **run_kwargs)
+            except UsageLimitExceeded as exc:
+                await self._emit(
+                    span_event(
+                        type_=EventType.SESSION_ERROR,
+                        kind=EventKind.PRIMARY,
+                        session_id=session_id,
+                        parent_span_id=primary_span,
+                        span_id=new_span_id(),
+                        extra={"error": f"UsageLimitExceeded: {exc}"},
+                    )
+                )
+                return AgentResponse(
+                    content="I had to stop — this request used too many tokens or tool calls.",
+                    tool_calls=[],
+                    model_used=model_string,
+                )
 
             content = str(result.output)
             all_msgs = list(result.all_messages())
-            tool_calls = await self._extract_tool_calls_with_spans(
+            subagent_names = set(self._config.agents.subagents.keys())  # type: ignore[union-attr]
+            tool_calls = await _extract_tool_calls_with_spans(
                 all_msgs,
                 session_id=session_id,
                 parent_span_id=primary_span,
+                emit=self._emit,
+                subagent_names=subagent_names,
             )
             reasoning = _extract_reasoning(all_msgs)
 
@@ -222,87 +245,123 @@ class Orchestrator:
             return ""
         return f"## Core Memory\n{formatted}\n\n"
 
-    async def _extract_tool_calls_with_spans(
-        self,
-        messages: list[ModelMessage],
-        *,
-        session_id: str,
-        parent_span_id: str,
-    ) -> list[ToolCall]:
-        """Extract tool calls from pydantic-ai messages and emit span-shaped events.
 
-        Every tool_call gets its own span_id; the matching tool_result event
-        uses the same span_id so the UI can pair them up.
-        """
-        pending: dict[str, ToolCall] = {}
-        call_spans: dict[str, str] = {}
-        ordered: list[ToolCall] = []
+async def _extract_tool_calls_with_spans(
+    messages: list[ModelMessage],
+    *,
+    session_id: str,
+    parent_span_id: str,
+    emit: Any,
+    subagent_names: set[str] | None = None,
+) -> list[ToolCall]:
+    """Extract tool calls from pydantic-ai messages and emit span-shaped events.
 
-        for msg in messages:
-            if isinstance(msg, ModelResponse):
-                for part in msg.parts:
-                    if isinstance(part, ToolCallPart):
-                        args = part.args_as_dict()
-                        call_id = part.tool_call_id or part.tool_name
-                        tc = ToolCall(
-                            tool_call_id=call_id,
-                            name=part.tool_name,
-                            args=args,
+    Every tool_call gets its own span_id; the matching tool_result event
+    uses the same span_id so the UI can pair them up. When a tool call name
+    is in ``subagent_names``, additional ``subagent_start``/``subagent_done``
+    events are emitted as children of the tool span.
+    """
+    pending: dict[str, ToolCall] = {}
+    call_spans: dict[str, str] = {}
+    ordered: list[ToolCall] = []
+    subagent_names = subagent_names or set()
+
+    for msg in messages:
+        if isinstance(msg, ModelResponse):
+            for part in msg.parts:
+                if isinstance(part, ToolCallPart):
+                    args = part.args_as_dict()
+                    call_id = part.tool_call_id or part.tool_name
+                    tc = ToolCall(
+                        tool_call_id=call_id,
+                        name=part.tool_name,
+                        args=args,
+                    )
+                    pending[call_id] = tc
+                    ordered.append(tc)
+                    tool_span = new_span_id()
+                    call_spans[call_id] = tool_span
+
+                    # Detect Level 3 on-demand skill reads (read_file on a SKILL.md path)
+                    skill_read: str | None = None
+                    if part.tool_name == "read_file":
+                        path_arg = str(args.get("path", ""))
+                        if "SKILL.md" in path_arg:
+                            skill_read = path_arg
+
+                    extra: dict[str, Any] = {
+                        "tool_name": part.tool_name,
+                        "args": args,
+                    }
+                    if skill_read:
+                        extra["skill_read"] = skill_read
+
+                    await emit(
+                        span_event(
+                            type_=EventType.TOOL_CALL,
+                            kind=EventKind.TOOL,
+                            session_id=session_id,
+                            parent_span_id=parent_span_id,
+                            span_id=tool_span,
+                            extra=extra,
                         )
-                        pending[call_id] = tc
-                        ordered.append(tc)
-                        span_id = new_span_id()
-                        call_spans[call_id] = span_id
+                    )
 
-                        # Detect Level 3 on-demand skill reads (read_file on a SKILL.md path)
-                        skill_read: str | None = None
-                        if part.tool_name == "read_file":
-                            path_arg = str(args.get("path", ""))
-                            if "SKILL.md" in path_arg:
-                                skill_read = path_arg
-
-                        extra: dict[str, Any] = {
-                            "tool_name": part.tool_name,
-                            "args": args,
-                        }
-                        if skill_read:
-                            extra["skill_read"] = skill_read
-
-                        await self._emit(
+                    if part.tool_name in subagent_names:
+                        await emit(
                             span_event(
-                                type_=EventType.TOOL_CALL,
-                                kind=EventKind.TOOL,
+                                type_=EventType.SUBAGENT_START,
+                                kind=EventKind.SUBAGENT,
                                 session_id=session_id,
-                                parent_span_id=parent_span_id,
-                                span_id=span_id,
-                                extra=extra,
+                                parent_span_id=tool_span,
+                                span_id=new_span_id(),
+                                extra={
+                                    "name": part.tool_name,
+                                    "input": args,
+                                },
                             )
                         )
-            elif isinstance(msg, ModelRequest):
-                for part in msg.parts:
-                    if isinstance(part, ToolReturnPart):
-                        call_id = part.tool_call_id or part.tool_name
-                        if call_id in pending:
-                            pending[call_id].result = part.content
-                        span_id = call_spans.get(call_id, new_span_id())
-                        result_str = (
-                            str(part.content) if part.content is not None else ""
-                        )
-                        await self._emit(
+        elif isinstance(msg, ModelRequest):
+            for part in msg.parts:
+                if isinstance(part, ToolReturnPart):
+                    call_id = part.tool_call_id or part.tool_name
+                    if call_id in pending:
+                        pending[call_id].result = part.content
+                    tool_span = call_spans.get(call_id, new_span_id())
+                    result_str = (
+                        str(part.content) if part.content is not None else ""
+                    )
+
+                    if part.tool_name in subagent_names:
+                        await emit(
                             span_event(
-                                type_=EventType.TOOL_RESULT,
-                                kind=EventKind.TOOL,
+                                type_=EventType.SUBAGENT_DONE,
+                                kind=EventKind.SUBAGENT,
                                 session_id=session_id,
-                                parent_span_id=parent_span_id,
-                                span_id=span_id,
+                                parent_span_id=tool_span,
+                                span_id=new_span_id(),
                                 extra={
-                                    "tool_name": part.tool_name,
-                                    "result": result_str[:500],
+                                    "name": part.tool_name,
+                                    "output_preview": result_str[:500],
                                 },
                             )
                         )
 
-        return ordered
+                    await emit(
+                        span_event(
+                            type_=EventType.TOOL_RESULT,
+                            kind=EventKind.TOOL,
+                            session_id=session_id,
+                            parent_span_id=parent_span_id,
+                            span_id=tool_span,
+                            extra={
+                                "tool_name": part.tool_name,
+                                "result": result_str[:500],
+                            },
+                        )
+                    )
+
+    return ordered
 
 
 def _to_pydantic_history(

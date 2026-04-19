@@ -71,7 +71,20 @@ async def test_full_flow_with_subagent_delegation(monkeypatch, kore_home):
     # Stub the subagent's run to return a known ResearchReport, bypassing any
     # real model call. We patch the name bound into kore.agents.primary's
     # namespace because primary's tool-factory lambda closes over that name.
+    subagent_queries: list[str] = []
+
     async def stub_research_run(*args, **kwargs):
+        # Capture the message string so we can assert the primary's tool call
+        # query propagated into the subagent. The stub is bound as an instance
+        # method on the dynamic class below, so args[0] is `self` and args[1]
+        # is the message; fall back to kwargs for safety.
+        if len(args) >= 2:
+            subagent_queries.append(args[1])
+        elif args:
+            subagent_queries.append(args[0])
+        elif "user_prompt" in kwargs:
+            subagent_queries.append(kwargs["user_prompt"])
+
         class R:
             output = ResearchReport(
                 summary="Blue sky = Rayleigh scattering.",
@@ -127,10 +140,16 @@ async def test_full_flow_with_subagent_delegation(monkeypatch, kore_home):
 
     # Trace shape: session -> primary -> tool(deep_research) -> subagent_*
     types_ = [e["type"] for e in trace]
+    idx = {t: types_.index(t) for t in (
+        "session_start", "primary_start", "tool_call",
+        "subagent_start", "subagent_done", "primary_done", "session_done",
+    )}
+    assert idx["session_start"] < idx["primary_start"] < idx["tool_call"]
+    assert idx["tool_call"] < idx["subagent_start"] < idx["subagent_done"]
+    assert idx["subagent_done"] < idx["primary_done"] < idx["session_done"]
     assert types_[0] == "session_start"
-    assert "primary_start" in types_
-    assert "tool_call" in types_
-    assert "subagent_start" in types_
-    assert "subagent_done" in types_
-    assert "primary_done" in types_
     assert types_[-1] == "session_done"
+
+    # Verify the subagent received the primary's query (no telephone-game loss).
+    assert len(subagent_queries) == 1
+    assert "why is the sky blue" in subagent_queries[0]

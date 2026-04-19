@@ -27,45 +27,142 @@ function splitIntoRuns(events) {
   return runs
 }
 
+// Pure helper: build a map of parent_span_id -> child events[], preserving
+// insertion order. Events with null/missing parent are grouped under the
+// special key "__root__".
+export function buildChildrenByParent(events) {
+  const map = new Map()
+  for (const e of events) {
+    const key = e.parent_span_id == null ? '__root__' : e.parent_span_id
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(e)
+  }
+  return map
+}
+
+function shortModel(model) {
+  if (!model) return ''
+  return model.split(':').slice(1).join(':') || model
+}
+
+function formatArgs(args) {
+  if (args == null) return ''
+  try {
+    const s = JSON.stringify(args)
+    return s.length > 60 ? s.slice(0, 60) + '…' : s
+  } catch {
+    return String(args)
+  }
+}
+
+// Render a tool pair (tool_call + tool_result share the same span_id).
+// Any subagent_start/subagent_done events are children of the tool span —
+// when present we swap the tool chrome for a nested subagent card.
+function ToolNode({ callEvent, resultEvent, childrenByParent, expandedTools, toggleTool }) {
+  const key = callEvent.span_id
+  const open = expandedTools.has(key)
+  const subagentChildren = childrenByParent.get(callEvent.span_id) || []
+  const subagentStart = subagentChildren.find(c => c.type === 'subagent_start')
+  const subagentDone = subagentChildren.find(c => c.type === 'subagent_done')
+  const isSubagent = Boolean(subagentStart)
+
+  const label = isSubagent
+    ? `${subagentStart.name || callEvent.tool_name}(${formatArgs(subagentStart.input ?? callEvent.args)})`
+    : `${callEvent.tool_name}(${formatArgs(callEvent.args)})`
+
+  const icon = isSubagent ? '🤖' : '🔧'
+  const wrapperClass = isSubagent ? 'trace-subagent-card' : 'trace-tool-item'
+
+  return (
+    <div className={wrapperClass}>
+      <div className="trace-tool-header" onClick={() => toggleTool(key)}>
+        <span className="trace-tool-icon">{icon}</span>
+        <span className="trace-tool-name">{label}</span>
+        <span className="trace-tool-expand">{open ? '▾' : '▸'}</span>
+      </div>
+      {open && (
+        <div className="trace-tool-detail">
+          <div className="trace-detail-label">Args</div>
+          <pre className="trace-code trace-code-args">{JSON.stringify(callEvent.args, null, 2)}</pre>
+          {callEvent.skill_read && (
+            <div className="trace-skill-read">skill: {callEvent.skill_read}</div>
+          )}
+          {isSubagent && subagentDone?.output_preview && (
+            <>
+              <div className="trace-detail-label">Subagent output</div>
+              <pre className="trace-code trace-code-result">{subagentDone.output_preview}</pre>
+            </>
+          )}
+          {resultEvent && (
+            <>
+              <div className="trace-detail-label">Result</div>
+              <pre className="trace-code trace-code-result">{resultEvent.result ?? ''}</pre>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ErrorBanner({ event }) {
+  return (
+    <div className="trace-error-banner">
+      <span className="trace-error-label">Error</span>
+      <span className="trace-error-text">{event.error || 'unknown error'}</span>
+    </div>
+  )
+}
+
+// Render the children of a given span: pair tool_call with its matching
+// tool_result (same span_id), inline session_error banners, and drop
+// tool_result events (consumed by their ToolNode). Subagent events are
+// rendered by ToolNode via their parent tool span, so they never appear
+// as direct children of a primary span.
+function SpanChildren({ parentSpanId, childrenByParent, expandedTools, toggleTool }) {
+  const items = childrenByParent.get(parentSpanId) || []
+  const resultsBySpan = new Map()
+  for (const e of items) {
+    if (e.type === 'tool_result') resultsBySpan.set(e.span_id, e)
+  }
+  const nodes = []
+  for (const e of items) {
+    if (e.type === 'tool_call') {
+      nodes.push(
+        <ToolNode
+          key={e.span_id}
+          callEvent={e}
+          resultEvent={resultsBySpan.get(e.span_id) || null}
+          childrenByParent={childrenByParent}
+          expandedTools={expandedTools}
+          toggleTool={toggleTool}
+        />
+      )
+    } else if (e.type === 'session_error') {
+      nodes.push(<ErrorBanner key={e.span_id} event={e} />)
+    }
+  }
+  return nodes
+}
+
 function TraceBlock({ runEvents }) {
   const [open, setOpen] = useState(false)
   const [expandedTools, setExpandedTools] = useState(new Set())
 
   if (!runEvents || runEvents.length === 0) return null
 
-  const planSummary = runEvents.find(e => e.type === 'plan_summary')
+  const childrenByParent = buildChildrenByParent(runEvents)
+  const sessionStart = runEvents.find(e => e.type === 'session_start')
+  const sessionSpanId = sessionStart?.span_id
+  const sessionChildren = sessionSpanId ? (childrenByParent.get(sessionSpanId) || []) : []
+  const primaryStart = sessionChildren.find(e => e.type === 'primary_start')
+  // Errors can attach to the session root (setup failure) or to the primary span.
+  const sessionLevelErrors = sessionChildren.filter(e => e.type === 'session_error')
 
-  // Group events by step_index to build per-executor sections
-  const stepMap = {}
-  for (const e of runEvents) {
-    if (e.step_index == null) continue
-    if (!stepMap[e.step_index]) stepMap[e.step_index] = []
-    stepMap[e.step_index].push(e)
-  }
-  const steps = Object.keys(stepMap)
-    .map(Number)
-    .sort((a, b) => a - b)
-    .map(idx => {
-      const events = stepMap[idx]
-      const start = events.find(e => e.type === 'executor_start')
-      const done = events.find(e => e.type === 'executor_done')
-      const calls = events.filter(e => e.type === 'tool_call')
-      const results = events.filter(e => e.type === 'tool_result')
-      return {
-        idx,
-        name: start?.executor_name || '',
-        model: start?.model || '',
-        skills: start?.skills_loaded || [],
-        pairs: calls.map((tc, i) => ({ call: tc, result: results[i] ?? null })),
-        reasoningSteps: done?.reasoning_steps || [],
-      }
-    })
-
-  // Header label: actual resolved executor names
-  const executorNames = steps.map(s => s.name).filter(Boolean)
-  const label = executorNames.length > 0 ? `planner → ${executorNames.join(' → ')}` : 'trace'
-  const firstModel = steps[0]?.model?.split(':').slice(1).join(':') || steps[0]?.model || ''
-  const totalTools = steps.reduce((sum, s) => sum + s.pairs.length, 0)
+  const totalTools = runEvents.filter(e => e.type === 'tool_call').length
+  const model = shortModel(primaryStart?.model)
+  const skills = primaryStart?.skills_loaded || []
+  const label = 'Primary agent'
 
   const toggleTool = key => setExpandedTools(prev => {
     const next = new Set(prev)
@@ -79,7 +176,7 @@ function TraceBlock({ runEvents }) {
         <div className="trace-card-left">
           <span className="trace-toggle">{open ? '▾' : '▸'}</span>
           <span className="trace-label-main">{label}</span>
-          {firstModel && <span className="trace-model-chip">{firstModel}</span>}
+          {model && <span className="trace-model-chip">{model}</span>}
         </div>
         {!open && totalTools > 0 && (
           <span className="trace-tool-count">{totalTools} tool{totalTools > 1 ? 's' : ''}</span>
@@ -88,83 +185,27 @@ function TraceBlock({ runEvents }) {
 
       {open && (
         <div className="trace-body">
-          {/* Planner section */}
-          {planSummary && (
+          {skills.length > 0 && (
             <div className="trace-planner-row">
-              <div className="trace-section-label">Planner</div>
-              <div className="trace-reasoning">
-                <div><strong>Intent:</strong> {planSummary.intent}</div>
-                <div><strong>Reasoning:</strong> {planSummary.reasoning}</div>
-                {planSummary.steps?.length > 1 && (
-                  <div className="trace-steps">
-                    {planSummary.steps.map((s, i) => (
-                      <div key={i} className="trace-step">
-                        <span className="trace-executor-name">{s.executor}</span>: {s.instruction}
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="trace-section-label">Skills</div>
+              <div className="trace-skills">
+                {skills.map(s => <span key={s} className="trace-skill-chip">{s}</span>)}
               </div>
             </div>
           )}
 
-          {/* Per-executor sections */}
-          {steps.map(({ idx, name, model, skills, pairs, reasoningSteps }) => {
-            const stepModel = model?.split(':').slice(1).join(':') || model || ''
-            return (
-              <div key={idx} className="trace-executor-block">
-                <div className="trace-executor-header">
-                  <span className="trace-executor-label">{name || `step ${idx}`}</span>
-                  {stepModel && <span className="trace-model-chip">{stepModel}</span>}
-                </div>
+          {primaryStart && (
+            <div className="trace-executor-block">
+              <SpanChildren
+                parentSpanId={primaryStart.span_id}
+                childrenByParent={childrenByParent}
+                expandedTools={expandedTools}
+                toggleTool={toggleTool}
+              />
+            </div>
+          )}
 
-                {skills.length > 0 && (
-                  <div className="trace-planner-row">
-                    <div className="trace-section-label">Skills</div>
-                    <div className="trace-skills">
-                      {skills.map(s => <span key={s} className="trace-skill-chip">{s}</span>)}
-                    </div>
-                  </div>
-                )}
-
-                {reasoningSteps.length > 1 && (
-                  <div className="trace-planner-row">
-                    <div className="trace-section-label">Reasoning</div>
-                    <div className="trace-reasoning">
-                      {reasoningSteps.slice(0, -1).map((step, i) => (
-                        <div key={i} className="trace-reasoning-step">{step}</div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {pairs.map(({ call, result }, toolIdx) => {
-                  const key = `${idx}-${toolIdx}`
-                  return (
-                    <div key={toolIdx} className="trace-tool-item">
-                      <div className="trace-tool-header" onClick={() => toggleTool(key)}>
-                        <span className="trace-tool-icon">🔧</span>
-                        <span className="trace-tool-name">{call.tool_name}</span>
-                        <span className="trace-tool-expand">{expandedTools.has(key) ? '▾' : '▸ collapsed'}</span>
-                      </div>
-                      {expandedTools.has(key) && (
-                        <div className="trace-tool-detail">
-                          <div className="trace-detail-label">Args</div>
-                          <pre className="trace-code trace-code-args">{JSON.stringify(call.args, null, 2)}</pre>
-                          {result && (
-                            <>
-                              <div className="trace-detail-label">Result</div>
-                              <pre className="trace-code trace-code-result">{result.result}</pre>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
+          {sessionLevelErrors.map(err => <ErrorBanner key={err.span_id} event={err} />)}
         </div>
       )}
     </div>

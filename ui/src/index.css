@@ -623,6 +623,19 @@ body {
 .trace-code-args { color: #a0c0a0; }
 .trace-code-result { color: #c0a060; }
 
+/* Nested subagent card — rendered inside a primary tool list when a tool
+   call is a subagent delegation. */
+.trace-subagent-card { border: 1px solid rgba(108,99,255,0.25); border-radius: 4px; margin: 6px 12px; background: rgba(108,99,255,0.04); }
+.trace-subagent-card .trace-tool-name { color: #a0a0ff; }
+.trace-subagent-card .trace-tool-header:hover { background: rgba(108,99,255,0.08); }
+
+/* Red error banner — attaches at whichever span reported the failure. */
+.trace-error-banner { margin: 6px 12px; padding: 6px 10px; border-radius: 4px; background: rgba(255,80,80,0.08); border: 1px solid rgba(255,80,80,0.3); display: flex; align-items: flex-start; gap: 8px; }
+.trace-error-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #ff6c6c; flex-shrink: 0; }
+.trace-error-text { font-size: 11px; color: #ffb0b0; word-break: break-word; }
+
+.trace-skill-read { font-size: 10px; color: #70c090; margin: 2px 0 6px; }
+
 /* WS badge + pulse */
 .ws-badge { font-size: 9px; margin-left: 8px; padding: 2px 7px; border-radius: 9px; }
 .ws-badge.live { background: rgba(76,175,80,0.1); color: #4caf50; border: 1px solid rgba(76,175,80,0.2); }

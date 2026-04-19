@@ -81,22 +81,30 @@ async def delete_job(
 
 @router.get("/agents")
 async def get_agents(request: Request) -> dict[str, Any]:
+    """Return the v2 primary agent + subagent configuration.
+
+    v2 replaced planner/executors with a single primary agent plus a dict of
+    narrow subagents (deep_research, draft_longform) delegated to via tool calls.
+    """
     config = request.app.state.config
-    planner = None
-    if config.agents.planner is not None:
-        planner = {
-            "model": config.agents.planner.model,
-            "description": config.agents.planner.description,
+    primary = None
+    if config.agents is not None and config.agents.primary is not None:
+        primary = {
+            "model": config.agents.primary.model,
+            "tools": config.agents.primary.tools,
+            "skills": config.agents.primary.skills,
         }
-    executors = {
-        name: {
-            "model": exc.model,
-            "description": exc.description,
-            "tools": exc.tools,
+    subagents = {}
+    if config.agents is not None:
+        subagents = {
+            name: {
+                "model": sub.model,
+                "tools": sub.tools,
+                "skills": sub.skills,
+            }
+            for name, sub in config.agents.subagents.items()
         }
-        for name, exc in config.agents.executors.items()
-    }
-    return {"planner": planner, "executors": executors}
+    return {"primary": primary, "subagents": subagents}
 
 
 # ── /api/skills ───────────────────────────────────────────────────────────────

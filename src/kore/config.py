@@ -135,36 +135,55 @@ class ToolConfig(BaseModel):
     max_results: int = 5
 
 
-class SkillAssignment(BaseModel):
-    """A skill assigned to an executor, with an optional per-executor always-on override."""
+class UsageLimitsConfig(BaseModel):
+    """Caps passed to Pydantic AI's UsageLimits on each agent run.
+
+    These protect against runaway cost. Subagent tokens propagate via ctx.usage
+    so a primary's limit covers the whole run tree.
+    """
     model_config = ConfigDict(extra="ignore")
 
-    name: str
-    always: bool = False
+    request_limit: int = 30          # max LLM requests per run
+    total_tokens_limit: int = 200_000
+    tool_calls_limit: int = 25
 
 
-class ExecutorConfig(BaseModel):
+class PrimaryAgentConfig(BaseModel):
+    """The single conversational agent that runs every turn."""
     model_config = ConfigDict(extra="ignore")
 
     model: str
-    prompt_file: str
-    tools: list[str]
-    skills: list[SkillAssignment] = []
+    prompt: str                                # path to prompt markdown, relative to project root
+    tools: list[str] = ["*"]                   # "*" = all registered tools
+    skills: list[str] = ["*"]                  # "*" = all discovered skills; plain strings only (no always-override here)
+    shell_allowlist: list[str] = []
+    usage_limits: UsageLimitsConfig = UsageLimitsConfig()
+    max_retries: int = 3
 
-    @field_validator("skills", mode="before")
+    @field_validator("model")
     @classmethod
-    def coerce_skills(cls, v: list) -> list:
-        """Allow plain strings alongside dicts; strings default to always=False."""
-        result = []
-        for item in v:
-            if isinstance(item, str):
-                result.append({"name": item, "always": False})
-            else:
-                result.append(item)
-        return result
-    description: str = ""           # One-line description shown to the planner.
-    max_retries: int = 3            # Pydantic AI retries on malformed output before raising.
-    shell_allowlist: list[str] = [] # Binaries this executor may run via run_command.
+    def model_has_provider_prefix(cls, v: str) -> str:
+        if ":" not in v:
+            raise ValueError(
+                f"model string must have provider prefix (e.g. 'anthropic:claude-...'): {v!r}"
+            )
+        return v
+
+
+class SubAgentConfig(BaseModel):
+    """A narrow subagent exposed as an @agent.tool on the primary.
+
+    Currently only 'deep_research' and 'draft_longform' are supported in v2.
+    """
+    model_config = ConfigDict(extra="ignore")
+
+    model: str
+    prompt: str
+    tools: list[str]
+    skills: list[str] = []
+    shell_allowlist: list[str] = []
+    usage_limits: UsageLimitsConfig = UsageLimitsConfig()
+    max_retries: int = 3
 
     @field_validator("model")
     @classmethod
@@ -177,10 +196,23 @@ class ExecutorConfig(BaseModel):
 
 
 class AgentsConfig(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+    """v2 agents schema: one primary + a dict of subagents."""
+    model_config = ConfigDict(extra="forbid")
 
-    planner: ExecutorConfig | None = None
-    executors: dict[str, ExecutorConfig] = {}
+    primary: PrimaryAgentConfig
+    subagents: dict[str, SubAgentConfig] = {}
+
+    @field_validator("subagents")
+    @classmethod
+    def only_known_subagents(cls, v: dict[str, SubAgentConfig]) -> dict[str, SubAgentConfig]:
+        allowed = {"deep_research", "draft_longform"}
+        unknown = set(v) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unknown subagent(s): {sorted(unknown)}. "
+                f"v2 supports only: {sorted(allowed)}"
+            )
+        return v
 
 
 class KoreConfig(BaseModel):
@@ -188,7 +220,7 @@ class KoreConfig(BaseModel):
 
     version: str
     llm: LLMConfig
-    agents: AgentsConfig = AgentsConfig()
+    agents: AgentsConfig | None = None
     tools: dict[str, ToolConfig] = {}
     security: SecurityConfig = SecurityConfig()
     ui: UIConfig = UIConfig()
@@ -238,6 +270,23 @@ def load_config(path: Path | str | None = None) -> KoreConfig:
 
     with open(resolved_path) as f:
         raw = json.load(f)
+
+    # Detect legacy v1 schema and raise with a migration pointer.
+    agents = raw.get("agents") or {}
+    legacy_keys = [k for k in ("planner", "executors") if k in agents]
+    if legacy_keys:
+        raise ConfigError(
+            f"Legacy v1 config keys present: agents.{legacy_keys}. "
+            "These were removed in the v2 primary-agent refactor. "
+            "Migrate to agents.primary + agents.subagents — see "
+            "docs/superpowers/specs/2026-04-19-primary-agent-refactor-design.md"
+        )
+
+    if "agents" in raw and "primary" not in agents:
+        raise ConfigError(
+            "agents.primary is required — see the v2 schema in "
+            "docs/superpowers/specs/2026-04-19-primary-agent-refactor-design.md"
+        )
 
     resolved = _resolve_env_vars(raw)
 

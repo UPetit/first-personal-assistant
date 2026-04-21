@@ -24,33 +24,43 @@ _CONFIG_TEMPLATE = {
         }
     },
     "agents": {
-        "planner": {
+        "primary": {
             "model": "anthropic:claude-sonnet-4-6",
-            "prompt_file": "planner.md",
-            "tools": [],
-        },
-        "executors": {
-            "general": {
-                "model": "anthropic:claude-sonnet-4-6",
-                "prompt_file": "general.md",
-                "tools": ["web_search", "scrape_url", "get_current_time", "read_skill", "core_memory_update", "core_memory_delete", "memory_search", "memory_store"],
-                "skills": [
-                    {"name": "search-topic-online"},
-                    {"name": "content-writer"},
-                    {"name": "memory-management", "always": True},
-                    {"name": "skill-vetter"},
-                    {"name": "skill-creator"},
-                    {"name": "summarize"},
-                ],
-                "description": "Handles complex or mixed tasks requiring multiple capabilities",
+            "prompt": "prompts/primary.md",
+            "tools": ["*"],
+            "skills": ["*"],
+            "shell_allowlist": [],
+            "usage_limits": {
+                "request_limit": 30,
+                "total_tokens_limit": 200000,
+                "tool_calls_limit": 25,
             },
-            "search": {
+        },
+        "subagents": {
+            "deep_research": {
                 "model": "anthropic:claude-haiku-4-5-20251001",
-                "prompt_file": "search.md",
-                "tools": ["web_search", "scrape_url", "get_current_time", "read_skill"],
-                "skills": [{"name": "search-topic-online", "always": True}, {"name": "summarize"}],
-                "description": "Web research and information retrieval",
-            }
+                "prompt": "prompts/deep_research.md",
+                "tools": ["web_search", "scrape_url", "memory_search"],
+                "skills": ["search-topic-online"],
+                "shell_allowlist": [],
+                "usage_limits": {
+                    "request_limit": 10,
+                    "total_tokens_limit": 80000,
+                    "tool_calls_limit": 12,
+                },
+            },
+            "draft_longform": {
+                "model": "anthropic:claude-sonnet-4-6",
+                "prompt": "prompts/draft_longform.md",
+                "tools": ["memory_search", "read_file"],
+                "skills": ["content-writer"],
+                "shell_allowlist": [],
+                "usage_limits": {
+                    "request_limit": 6,
+                    "total_tokens_limit": 60000,
+                    "tool_calls_limit": 8,
+                },
+            },
         },
     },
     "tools": {

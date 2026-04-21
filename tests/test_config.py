@@ -9,7 +9,6 @@ from kore.config import (
     AgentsConfig,
     ChannelsConfig,
     ConfigError,
-    ExecutorConfig,
     KoreConfig,
     LLMConfig,
     LLMProviderConfig,
@@ -123,46 +122,6 @@ def test_security_config_defaults():
     assert sec.queue_maxsize == 100
 
 
-def test_executor_max_retries_default():
-    """ExecutorConfig.max_retries defaults to 3."""
-    cfg = ExecutorConfig(model="anthropic:claude-sonnet-4-6", prompt_file="x.md", tools=[])
-    assert cfg.max_retries == 3
-
-
-def test_executor_max_retries_custom():
-    """ExecutorConfig.max_retries can be overridden."""
-    cfg = ExecutorConfig(model="anthropic:claude-sonnet-4-6", prompt_file="x.md", tools=[], max_retries=5)
-    assert cfg.max_retries == 5
-
-
-def test_planner_optional(tmp_path):
-    data = _minimal_config_dict()
-    data["agents"] = {}  # no planner block
-    cfg_path = tmp_path / "config.json"
-    cfg_path.write_text(json.dumps(data))
-    config = load_config(str(cfg_path))
-    assert config.agents.planner is None
-
-
-def test_executor_skills_accepted(tmp_path):
-    data = _minimal_config_dict()
-    data["agents"] = {
-        "executors": {
-            "general": {
-                "model": "anthropic:claude-haiku-4-5-20251001",
-                "prompt_file": "prompts/general.md",
-                "tools": ["web_search"],
-                "skills": ["web-research"],
-            }
-        }
-    }
-    cfg_path = tmp_path / "config.json"
-    cfg_path.write_text(json.dumps(data))
-    config = load_config(str(cfg_path))
-    from kore.config import SkillAssignment
-    assert config.agents.executors["general"].skills == [SkillAssignment(name="web-research", always=False)]
-
-
 def test_secrets_redacted_in_repr(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "super-secret-key")
     data = {
@@ -183,20 +142,6 @@ def test_session_config_defaults():
     assert cfg.compaction_model == "anthropic:claude-haiku-4-5-20251001"
     assert cfg.compaction_token_threshold == 6000
     assert cfg.keep_recent_turns == 10
-
-
-def test_executor_description_optional():
-    """ExecutorConfig.description is optional with default empty string."""
-    from kore.config import ExecutorConfig
-    cfg = ExecutorConfig(model="anthropic:claude-sonnet-4-6", prompt_file="x.md", tools=[])
-    assert cfg.description == ""
-    cfg2 = ExecutorConfig(
-        model="anthropic:claude-sonnet-4-6",
-        prompt_file="x.md",
-        tools=[],
-        description="Does things",
-    )
-    assert cfg2.description == "Does things"
 
 
 def test_skills_config_defaults():
@@ -278,3 +223,168 @@ def test_debug_session_tracing_can_be_enabled():
     from kore.config import DebugConfig
     cfg = DebugConfig(session_tracing=True)
     assert cfg.session_tracing is True
+
+
+def test_usage_limits_defaults():
+    from kore.config import UsageLimitsConfig
+    cfg = UsageLimitsConfig()
+    assert cfg.request_limit == 30
+    assert cfg.total_tokens_limit == 200_000
+    assert cfg.tool_calls_limit == 25
+
+
+def test_primary_agent_config_requires_model_and_prompt():
+    from kore.config import PrimaryAgentConfig, UsageLimitsConfig
+    cfg = PrimaryAgentConfig(
+        model="anthropic:claude-sonnet-4-6",
+        prompt="prompts/primary.md",
+    )
+    assert cfg.tools == ["*"]
+    assert cfg.skills == ["*"]
+    assert cfg.shell_allowlist == []
+    assert cfg.usage_limits == UsageLimitsConfig()
+
+
+def test_primary_agent_config_rejects_model_without_prefix():
+    from kore.config import PrimaryAgentConfig
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        PrimaryAgentConfig(model="claude-sonnet", prompt="prompts/primary.md")
+
+
+def test_subagent_config_narrow_defaults():
+    from kore.config import SubAgentConfig
+    cfg = SubAgentConfig(
+        model="anthropic:claude-haiku-4-5-20251001",
+        prompt="prompts/deep_research.md",
+        tools=["web_search", "scrape_url"],
+        skills=["search-topic-online"],
+    )
+    assert cfg.shell_allowlist == []
+    assert cfg.usage_limits.tool_calls_limit == 25
+
+
+def test_usage_limits_override():
+    from kore.config import SubAgentConfig
+    cfg = SubAgentConfig(
+        model="anthropic:claude-haiku-4-5-20251001",
+        prompt="prompts/deep_research.md",
+        tools=["web_search"],
+        usage_limits={"tool_calls_limit": 12, "total_tokens_limit": 80_000},
+    )
+    assert cfg.usage_limits.tool_calls_limit == 12
+    assert cfg.usage_limits.total_tokens_limit == 80_000
+    assert cfg.usage_limits.request_limit == 30
+
+
+def test_agents_config_rejects_legacy_planner(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "planner": {"model": "anthropic:claude-sonnet-4-6", "prompt_file": "prompts/planner.md", "tools": []},
+        "executors": {}
+      }
+    }
+    """)
+    with pytest.raises(ConfigError) as exc:
+        load_config(cfg)
+    assert "agents.planner" in str(exc.value) or "removed" in str(exc.value)
+
+
+def test_agents_config_rejects_legacy_executors(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "executors": {"general": {"model": "anthropic:claude-sonnet-4-6", "prompt_file": "prompts/general.md", "tools": []}}
+      }
+    }
+    """)
+    with pytest.raises(ConfigError):
+        load_config(cfg)
+
+
+def test_agents_config_accepts_new_schema(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "primary": {
+          "model": "anthropic:claude-sonnet-4-6",
+          "prompt": "prompts/primary.md"
+        },
+        "subagents": {
+          "deep_research": {
+            "model": "anthropic:claude-haiku-4-5-20251001",
+            "prompt": "prompts/deep_research.md",
+            "tools": ["web_search", "scrape_url", "memory_search"]
+          },
+          "draft_longform": {
+            "model": "anthropic:claude-sonnet-4-6",
+            "prompt": "prompts/draft_longform.md",
+            "tools": ["memory_search", "read_file"]
+          }
+        }
+      }
+    }
+    """)
+    loaded = load_config(cfg)
+    assert loaded.agents.primary.model == "anthropic:claude-sonnet-4-6"
+    assert "deep_research" in loaded.agents.subagents
+    assert "draft_longform" in loaded.agents.subagents
+
+
+def test_missing_primary_raises(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {}
+    }
+    """)
+    with pytest.raises(ConfigError) as exc:
+        load_config(cfg)
+    assert "primary" in str(exc.value)
+
+
+def test_unknown_subagent_rejected(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}},
+      "agents": {
+        "primary": {"model": "anthropic:claude-sonnet-4-6", "prompt": "prompts/primary.md"},
+        "subagents": {
+          "email_classifier": {
+            "model": "anthropic:claude-haiku-4-5-20251001",
+            "prompt": "prompts/ec.md",
+            "tools": []
+          }
+        }
+      }
+    }
+    """)
+    with pytest.raises(ConfigError) as exc:
+        load_config(cfg)
+    assert "email_classifier" in str(exc.value)
+
+
+def test_agents_absent_loads_with_none(tmp_path):
+    cfg = tmp_path / "config.json"
+    cfg.write_text("""
+    {
+      "version": "1",
+      "llm": {"providers": {"anthropic": {"api_key": "sk-test"}}}
+    }
+    """)
+    loaded = load_config(cfg)
+    assert loaded.agents is None

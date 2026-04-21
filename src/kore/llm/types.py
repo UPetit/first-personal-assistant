@@ -4,6 +4,24 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from pydantic import BaseModel
+
+
+class Source(BaseModel):
+    """A single source cited in a research report."""
+
+    url: str
+    title: str
+    snippet: str
+
+
+class ResearchReport(BaseModel):
+    """Structured output from the deep_research subagent."""
+
+    summary: str
+    key_findings: list[str]
+    sources: list[Source]
+
 
 @dataclass
 class KoreMessage:

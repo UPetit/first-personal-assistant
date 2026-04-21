@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
@@ -86,14 +87,15 @@ def test_add_job_writes_to_json(tmp_path):
 def test_add_job_fields_in_json(tmp_path):
     scheduler, _, jobs_file = _make_scheduler(tmp_path)
     scheduler.start()
-    scheduler.add_job("j1", "0 8 * * *", "Morning check", source="ui", executor="digest")
+    scheduler.add_job("j1", "0 8 * * *", "Morning check", source="ui")
     scheduler.stop()
     data = json.loads(jobs_file.read_text())
     job = next(j for j in data["jobs"] if j["id"] == "j1")
     assert job["schedule"] == "0 8 * * *"
     assert job["prompt"] == "Morning check"
     assert job["source"] == "ui"
-    assert job["executor"] == "digest"
+    # executor remains on the dataclass for legacy jobs.json compat, defaulting to "general"
+    assert job["executor"] == "general"
     assert job["enabled"] is True
     assert job["next_run_at"] is not None
     assert "tz" in job
@@ -162,7 +164,7 @@ def test_remove_job_unknown_raises_key_error(tmp_path):
 def test_list_jobs_returns_correct_fields(tmp_path):
     scheduler, _, _ = _make_scheduler(tmp_path)
     scheduler.start()
-    scheduler.add_job("j1", "0 8 * * *", "Morning", source="telegram", executor="digest")
+    scheduler.add_job("j1", "0 8 * * *", "Morning", source="telegram")
     jobs = scheduler.list_jobs()
     scheduler.stop()
     assert len(jobs) == 1
@@ -171,7 +173,7 @@ def test_list_jobs_returns_correct_fields(tmp_path):
     assert j["schedule"] == "0 8 * * *"
     assert j["prompt"] == "Morning"
     assert j["source"] == "telegram"
-    assert j["executor"] == "digest"
+    assert j["executor"] == "general"
     assert "next_run_at" in j
     assert "last_run_at" in j
     assert "last_status" in j
@@ -185,7 +187,7 @@ def test_list_jobs_returns_correct_fields(tmp_path):
 async def test_run_job_now_pushes_message(tmp_path):
     scheduler, queue, _ = _make_scheduler(tmp_path)
     scheduler.start()
-    scheduler.add_job("j1", "0 8 * * *", "Do the thing", executor="general")
+    scheduler.add_job("j1", "0 8 * * *", "Do the thing")
     await scheduler.run_job_now("j1")
     scheduler.stop()
     assert queue.qsize() == 1
@@ -316,3 +318,24 @@ async def test_no_sender_uses_noop_reply(tmp_path):
     msg = await queue.get()
     # Should not raise
     await msg.reply("anything")
+
+
+def test_cron_create_tool_no_longer_accepts_executor():
+    from kore.tools import cron_tools
+    import inspect
+    sig = inspect.signature(cron_tools.cron_create)
+    assert "executor" not in sig.parameters
+
+
+def test_job_from_dict_tolerates_legacy_executor_field(caplog):
+    from kore.scheduler.cron import _job_from_dict
+    raw = {
+        "id": "legacy_job",
+        "schedule": "0 8 * * *",
+        "prompt": "ping",
+        "executor": "writer",
+    }
+    with caplog.at_level(logging.WARNING, logger="kore.scheduler.cron"):
+        job = _job_from_dict(raw)
+    assert job.id == "legacy_job"
+    assert any("executor" in r.message.lower() for r in caplog.records)

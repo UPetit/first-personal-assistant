@@ -84,7 +84,7 @@ class BaseAgent:
     ) -> None:
         self._model_string = model_string
         self._max_tool_calls = max_tool_calls
-        self.skills_loaded: list[str] = []  # set by create_executor when skills are injected
+        self.skills_loaded: list[str] = []  # populated by the caller when skills are injected
         self._agent: Agent[KoreDeps, Any] = Agent(
             model,
             system_prompt=system_prompt,

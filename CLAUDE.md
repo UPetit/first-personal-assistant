@@ -373,6 +373,21 @@ OPENAI_API_KEY=...             # OpenAI models or OpenRouter (300+ models)
 
 `config.json` top-level keys: `version`, `llm` (providers config: API keys, base URLs for OpenRouter/Ollama), `agents` (planner + executors with model string/tools/skills/prompt per executor), `skills` (directories, ClawHub settings), `channels` (telegram token + allowed users), `memory` (core_memory path + event_log retrieval settings + consolidation settings), `scheduler` (timezone + jobs file), `tools` (per-tool config — `web_search.provider: "brave"`, `web_search.api_key_env: "BRAVE_API_KEY"`), `security` (rate limits), `ui` (port + auth).
 
+## Planned architecture refactor (v2 — in brainstorming)
+
+The current planner → executor(s) pipeline is "the weakest variant of prompt chaining" (Anthropic/Cognition/MAST taxonomy): each executor sees only the previous step's output, not the plan or cumulative context. For a conversational personal assistant this causes telephone-game context loss and silent quality degradation. A source document captures the full critique at `/Users/ulysse/Downloads/compass_artifact_wf-d9314a40-3278-4a98-9793-1dec9fbcef0a_text_markdown.md`.
+
+Target architecture: **one conversational primary agent + skills + on-demand subagent delegation + sleep-time consolidator** (per Anthropic Agent Skills / LangChain subagents-pattern / Letta sleep-time pattern). The three-layer memory and SKILL.md system stay — only the orchestration layer above them changes.
+
+The work is decomposed into four sub-projects, each with its own spec and plan:
+
+1. **Primary-agent refactor (critical path).** Delete planner + non-general executors. Replace with one `primary` agent running a single Pydantic AI loop per turn. Convert `search` and `writer` into `@agent.tool` subagents (`deep_research`, `draft_longform`) that return compressed results. Rework config schema, trace events, UI trace grouping. Add `UsageLimits` safety net (`request_limit`, `total_tokens_limit`, `tool_calls_limit`).
+2. **Workflows for scheduled/known pipelines.** Extract `digest` executor (and future email-classification/daily-digest) into deterministic `kore/workflows/` Python functions that call a single agent run at compose time. Cron jobs fire prompts through the primary by default; workflows are opt-in for known pipelines.
+3. **Sleep-time consolidator hardening.** Audit `memory/consolidation.py` for idle-time scheduling, race safety, and Generative-Agents-style reflection (rewriting core-memory blocks from raw observations).
+4. **Observability upgrade.** Add `logfire.instrument_pydantic_ai()` + FastAPI/SQLAlchemy/httpx instrumentation. Decide whether to fold custom `trace_store` into OTEL spans or keep both (OTEL for depth, trace_store for the UI).
+
+Sub-project 1 is the gravity well — 2–4 can happen in any order after. Each goes through brainstorming → spec → plan → implementation as a separate cycle.
+
 ## What is NOT in v1
 
 These are deferred to v2+. Do not implement unless explicitly asked:

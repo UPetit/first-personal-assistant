@@ -87,19 +87,23 @@ def test_log_handler_recent_returns_last_n():
 
 def _make_app_with_components(**kwargs):
     """Build app with mock components pre-wired."""
-    from kore.config import ExecutorConfig, AgentsConfig
+    from kore.config import AgentsConfig, PrimaryAgentConfig, SubAgentConfig
 
     config = _make_config()
-    # Give it a planner + general executor so /api/agents has something to return
+    # v2: single primary agent + optional subagents (no more planner/executors).
     config = config.model_copy(update={"agents": AgentsConfig(
-        planner=None,
-        executors={
-            "general": ExecutorConfig(
+        primary=PrimaryAgentConfig(
+            model="anthropic:claude-sonnet-4-6",
+            prompt="prompts/primary.md",
+            tools=["web_search"],
+            skills=["*"],
+        ),
+        subagents={
+            "deep_research": SubAgentConfig(
                 model="anthropic:claude-sonnet-4-6",
-                prompt_file="general.md",
-                tools=["web_search"],
-                description="General executor",
-            )
+                prompt="prompts/deep_research.md",
+                tools=["web_search", "scrape_url"],
+            ),
         },
     )})
 
@@ -150,14 +154,15 @@ async def test_delete_job_removes_it():
 
 
 @pytest.mark.asyncio
-async def test_get_agents_returns_executor_list():
+async def test_get_agents_returns_primary_and_subagents():
     app = _make_app_with_components()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         r = await c.get("/api/agents")
     assert r.status_code == 200
     data = r.json()
-    assert "general" in data["executors"]
-    assert data["executors"]["general"]["model"] == "anthropic:claude-sonnet-4-6"
+    assert data["primary"]["model"] == "anthropic:claude-sonnet-4-6"
+    assert "deep_research" in data["subagents"]
+    assert data["subagents"]["deep_research"]["model"] == "anthropic:claude-sonnet-4-6"
 
 
 @pytest.mark.asyncio

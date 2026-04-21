@@ -46,20 +46,20 @@ async def test_cron_create_passes_source_telegram():
     result = await cron_tools.cron_create("my_job", "0 8 * * *", "Do something")
     sched.add_job.assert_called_once_with(
         "my_job", "0 8 * * *", "Do something",
-        source="telegram", executor="general", timezone=None,
+        source="telegram", timezone=None,
     )
     assert "my_job" in result
 
 
-# 4. cron_create with explicit executor and timezone
+# 4. cron_create with explicit timezone
 @pytest.mark.asyncio
-async def test_cron_create_custom_executor_timezone():
+async def test_cron_create_custom_timezone():
     sched = _make_scheduler()
     cron_tools.init(sched)
-    await cron_tools.cron_create("j2", "0 9 * * *", "msg", executor="digest", timezone="Europe/Paris")
+    await cron_tools.cron_create("j2", "0 9 * * *", "msg", timezone="Europe/Paris")
     sched.add_job.assert_called_once_with(
         "j2", "0 9 * * *", "msg",
-        source="telegram", executor="digest", timezone="Europe/Paris",
+        source="telegram", timezone="Europe/Paris",
     )
 
 

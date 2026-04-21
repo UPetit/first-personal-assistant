@@ -13,6 +13,7 @@ from kore.agents.subagents import (
     make_deep_research_tool,
     make_draft_longform_tool,
 )
+from kore.agents.system_prompts import current_time_fragment
 from kore.config import (
     KORE_HOME as _DEFAULT_KORE_HOME,
     KoreConfig,
@@ -114,6 +115,8 @@ def build_primary(
         retries=primary_config.max_retries,
         deps_type=KoreDeps,
     )
+
+    agent.system_prompt(current_time_fragment)
 
     if "deep_research" in subagents:
         sub_cfg = subagents["deep_research"]

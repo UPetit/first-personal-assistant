@@ -373,6 +373,10 @@ OPENAI_API_KEY=...             # OpenAI models or OpenRouter (300+ models)
 
 `config.json` top-level keys: `version`, `llm` (providers config: API keys, base URLs for OpenRouter/Ollama), `agents` (planner + executors with model string/tools/skills/prompt per executor), `skills` (directories, ClawHub settings), `channels` (telegram token + allowed users), `memory` (core_memory path + event_log retrieval settings + consolidation settings), `scheduler` (timezone + jobs file), `tools` (per-tool config — `web_search.provider: "brave"`, `web_search.api_key_env: "BRAVE_API_KEY"`), `security` (rate limits), `ui` (port + auth).
 
+**Runtime config location.** The operational config lives at `~/.kore/config.json` on the host and is mounted into the gateway container at `/root/.kore/config.json` via `docker-compose.yml` (volume `~/.kore:/root/.kore`). There is **no `config.json` in the repo** — edits for a deployed instance go to `~/.kore/config.json`. Back it up (`cp ~/.kore/config.json ~/.kore/config.json.bak`) before any schema change; `load_config()` raises `ConfigError` with a migration pointer when it sees removed v1 keys (`agents.planner` / `agents.executors`). After editing, `docker compose restart gateway` is enough unless code also changed.
+
+**Wildcard gotcha.** `tools.registry.get_tools` does NOT expand `"*"` — `get_tools(["*"])` raises `KeyError`. `PrimaryAgentConfig.tools` defaults to `["*"]` but that default is a latent bug: configs and tests must enumerate tool names explicitly (e.g. `["web_search", "scrape_url", ...]`). Skills lists *do* accept `["*"]` (handled by `skill_registry.get_skills_for_executor`).
+
 ## Planned architecture refactor (v2 — in brainstorming)
 
 The current planner → executor(s) pipeline is "the weakest variant of prompt chaining" (Anthropic/Cognition/MAST taxonomy): each executor sees only the previous step's output, not the plan or cumulative context. For a conversational personal assistant this causes telephone-game context loss and silent quality degradation. A source document captures the full critique at `/Users/ulysse/Downloads/compass_artifact_wf-d9314a40-3278-4a98-9793-1dec9fbcef0a_text_markdown.md`.

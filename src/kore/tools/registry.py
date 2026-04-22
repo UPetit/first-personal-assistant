@@ -21,7 +21,18 @@ def get(name: str) -> Callable:
 
 
 def get_tools(names: list[str]) -> list[Callable]:
-    """Return callables for all names in order. Raises KeyError on the first unknown name."""
+    """Return callables for all names in order. Raises KeyError on the first unknown name.
+
+    Passing ``["*"]`` expands to every registered tool (sorted by name for
+    deterministic ordering). ``"*"`` may only appear as the sole entry —
+    mixing it with explicit names raises ``ValueError``.
+    """
+    if "*" in names:
+        if len(names) != 1:
+            raise ValueError(
+                f"Wildcard '*' must be the sole entry in tool list, got {names!r}"
+            )
+        return [_TOOLS[name] for name in sorted(_TOOLS)]
     return [get(name) for name in names]
 
 

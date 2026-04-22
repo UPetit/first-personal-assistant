@@ -25,7 +25,7 @@ async def test_get_session_returns_only_matching_session(tmp_path):
     store = TraceStore(tmp_path / "kore.db")
     await store.add({"type": "session_start", "session_id": "s1", "ts": "t"})
     await store.add({"type": "session_start", "session_id": "s2", "ts": "t"})
-    await store.add({"type": "executor_done", "session_id": "s1", "ts": "t"})
+    await store.add({"type": "primary_done", "session_id": "s1", "ts": "t"})
 
     results = await store.get_session("s1")
     assert len(results) == 2
@@ -37,7 +37,7 @@ async def test_get_session_preserves_insertion_order(tmp_path):
     from kore.gateway.trace_store import TraceStore
 
     store = TraceStore(tmp_path / "kore.db")
-    types = ["session_start", "plan_result", "executor_start", "executor_done", "session_done"]
+    types = ["session_start", "primary_start", "tool_call", "tool_result", "primary_done", "session_done"]
     for t in types:
         await store.add({"type": t, "session_id": "s1", "ts": "t"})
 

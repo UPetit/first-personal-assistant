@@ -35,7 +35,6 @@ class CronJob:
     schedule: str
     prompt: str
     source: str = "ui"
-    executor: str = "general"
     tz: str | None = None
     enabled: bool = True
     next_run_at: datetime | None = None   # UTC-aware
@@ -49,7 +48,6 @@ def _job_to_dict(job: CronJob) -> dict:
         "schedule": job.schedule,
         "prompt": job.prompt,
         "source": job.source,
-        "executor": job.executor,
         "tz": job.tz,
         "enabled": job.enabled,
         "next_run_at": job.next_run_at.isoformat() if job.next_run_at else None,
@@ -78,7 +76,6 @@ def _job_from_dict(d: dict) -> CronJob:
         schedule=d["schedule"],
         prompt=d["prompt"],
         source=d.get("source", "ui"),
-        executor=d.get("executor", "general"),
         tz=d.get("tz"),
         enabled=d.get("enabled", True),
         next_run_at=_dt(d.get("next_run_at")),
@@ -153,8 +150,6 @@ class KoreCronScheduler:
             schedule=cron_expr,
             prompt=prompt,
             source=source,
-            # executor kept as dataclass default ("general") for legacy jobs.json compat;
-            # no longer used for routing in v2 — all jobs fire through the primary agent.
             tz=timezone,  # store only what the user explicitly passed
             enabled=True,
             next_run_at=next_run,

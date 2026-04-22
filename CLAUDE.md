@@ -2,7 +2,7 @@
 
 ## What is this project
 
-Kore is a Python-native, Docker-first personal AI assistant platform. It uses a planner/executor agent pattern with multi-provider LLM support via Pydantic AI — Anthropic Claude is the default, with OpenAI, OpenRouter, and Ollama supported out of the box. Users interact via Telegram. The system runs scheduled tasks via CRON, remembers context long-term via a three-layer memory system, and exposes a Web UI dashboard for monitoring.
+Kore is a Python-native, Docker-first personal AI assistant platform. A single conversational primary agent runs every turn; narrow tasks delegate to subagents exposed as `@agent.tool` wrappers (`deep_research`, `draft_longform`). Multi-provider LLM support via Pydantic AI — Anthropic Claude is the default, with OpenAI, OpenRouter, and Ollama supported out of the box. Users interact via Telegram. The system runs scheduled tasks via CRON, remembers context long-term via a three-layer memory system, and exposes a Web UI dashboard for monitoring.
 
 ## Commands
 
@@ -49,23 +49,12 @@ cd ui && npm run build
 
 ```
 kore/
-├── docker-compose.yml
-├── Dockerfile
-├── config.json                    # Main configuration (mounted read-only)
-├── config/
-│   └── jobs.json                  # CRON job definitions
+├── docker-compose.yml             # Mounts ~/.kore → /root/.kore (config + data volume)
+├── Dockerfile                     # Bakes prompts/ into /app/prompts via KORE_PROMPTS_DIR
 ├── prompts/                       # System prompts for each agent (Markdown files)
-│   ├── planner.md
-│   ├── general.md
-│   ├── writer.md
-│   ├── search.md
-│   └── digest.md
-├── data/                          # ~/.kore/ on host (mounted volume — persists across restarts)
-│   ├── kore.db                    # SQLite database (events, logs)
-│   ├── jobs.json                  # CRON job store (authoritative, survives restarts)
-│   ├── core_memory.json           # Layer 1: always-in-context structured memory
-│   ├── skills/                    # User-installed skills (ClawHub downloads, custom)
-│   └── files/                     # Sandboxed file storage for tools
+│   ├── primary.md                 # Conversational primary agent
+│   ├── deep_research.md           # deep_research subagent
+│   └── draft_longform.md          # draft_longform subagent
 ├── skills/                        # Built-in skills (SKILL.md format, OpenClaw/Nanobot compatible)
 │   ├── search-topic-online/SKILL.md  # Search strategy, source evaluation, synthesis
 │   ├── content-writer/SKILL.md    # LinkedIn, emails, summaries — tone, structure
@@ -86,29 +75,33 @@ kore/
 │       │   ├── auth.py            # Basic auth enforcement
 │       │   ├── log_handler.py     # Log handler that feeds WebSocket stream
 │       │   ├── trace_store.py     # SQLite-backed session trace persistence (7-day TTL)
+│       │   ├── trace_events.py    # Span-shaped event factory (EventType, EventKind, span_event)
 │       │   └── queue.py           # Async message queue
 │       ├── agents/
 │       │   ├── base.py            # Base agent using Pydantic AI Agent class
-│       │   ├── deps.py            # Pydantic AI dependency injection types (AgentDeps)
-│       │   ├── planner.py         # Planner agent (intent classification + executor routing)
-│       │   ├── executor.py        # Generic executor (config-driven model, tools, prompt, skills)
-│       │   └── orchestrator.py    # Runs planner → executor pipeline
+│       │   ├── deps.py            # Pydantic AI dependency injection types (KoreDeps)
+│       │   ├── primary.py         # Conversational primary agent (single Pydantic AI loop per turn)
+│       │   ├── system_prompts.py  # Shared dynamic system-prompt fragments (e.g., current UTC time)
+│       │   ├── subagents/
+│       │   │   ├── deep_research.py   # ResearchReport subagent exposed to primary as @agent.tool
+│       │   │   └── draft_longform.py  # Long-form draft subagent exposed to primary as @agent.tool
+│       │   └── orchestrator.py    # Runs primary turn, emits span-shaped trace events
 │       ├── llm/
 │       │   ├── provider.py        # Provider factory: model string → Pydantic AI model instance
-│       │   └── types.py           # Shared types: KoreMessage, ToolCall, AgentResponse
+│       │   └── types.py           # Shared types: KoreMessage, ToolCall, AgentResponse, ResearchReport
 │       ├── skills/
 │       │   ├── loader.py          # SKILL.md parser: YAML frontmatter + Markdown body extraction
-│       │   ├── registry.py        # Skill discovery, dependency checking, executor mapping
+│       │   ├── registry.py        # Skill discovery, dependency checking, per-agent mapping
 │       │   └── clawhub.py         # ClawHub client: search, install, update skills
 │       ├── tools/
-│       │   ├── registry.py        # Tool collection and executor access mapping
+│       │   ├── registry.py        # Tool collection and per-agent access mapping
 │       │   ├── web_search.py      # Brave Search API
 │       │   ├── scrape.py          # URL content extraction
 │       │   ├── file_rw.py         # Sandboxed file I/O
 │       │   ├── memory_tools.py    # core_memory_update, memory_search, memory_store
 │       │   ├── cron_tools.py      # cron_create, cron_list, cron_delete
 │       │   ├── skill_tools.py     # skill_search, read_skill, skill_install
-│       │   ├── shell.py           # Sandboxed run_shell (per-executor allowlist)
+│       │   ├── shell.py           # Sandboxed run_shell (per-agent allowlist)
 │       │   └── custom/            # User-defined tools (registered via config)
 │       ├── memory/
 │       │   ├── core_memory.py     # Layer 1: JSON-based always-in-context memory
@@ -124,8 +117,7 @@ kore/
 │       │   ├── buffer.py          # In-memory message buffer per session
 │       │   └── compactor.py       # LLM-based compaction when context limit approached
 │       ├── scheduler/
-│       │   └── cron.py            # Asyncio-based CRON scheduler (jobs.json store)
-│       # event_bus.py — DELETED; replaced by gateway/trace_store.py
+│       │   └── cron.py            # Asyncio-native cron scheduler (jobs.json authoritative store)
 │       ├── logging_config.py      # JSON-structured logging setup
 │       ├── init.py                # ~/.kore directory bootstrap
 │       ├── db/
@@ -142,32 +134,43 @@ kore/
 │   ├── conftest.py                # Shared fixtures (Pydantic AI TestModel, test DB, sample config)
 │   ├── test_config.py             # Config loading and validation
 │   ├── test_agents.py             # Pydantic AI agent creation, model resolution, tool registration
-│   ├── test_skills.py             # SKILL.md parsing, discovery, dependency check, executor mapping
+│   ├── test_skills.py             # SKILL.md parsing, discovery, dependency check, per-agent mapping
 │   ├── test_tools.py              # Tool functions, schema generation from type hints
-│   ├── test_planner.py            # Planner intent classification + routing
-│   ├── test_executor.py           # Executor ReAct loop + tool calling
-│   ├── test_orchestrator.py       # End-to-end planner → executor pipeline
+│   ├── test_primary.py            # Primary agent build (skills, tools, subagents wired as @agent.tool)
+│   ├── test_subagents_deep_research.py  # Deep-research subagent build + @agent.tool wrapper
+│   ├── test_subagents_draft_longform.py # Draft-longform subagent build + @agent.tool wrapper
+│   ├── test_system_prompts.py     # Dynamic current-time injection in primary + subagents
+│   ├── test_orchestrator.py       # Primary-driven turn: span-shaped trace events, core memory prefix
 │   ├── test_core_memory.py        # Core memory CRUD, token cap enforcement
 │   ├── test_event_log.py          # Event store, FTS5, sqlite-vec retrieval
 │   ├── test_retrieval.py          # Hybrid search, temporal decay, score fusion
 │   ├── test_consolidation.py      # Consolidation agent: promotion, contradiction, GC
 │   ├── test_extraction.py         # Automatic post-conversation extraction
+│   ├── test_memory_integration.py # Orchestrator ↔ extraction wiring (best-effort post-turn)
+│   ├── test_memory_tools.py       # memory_search / memory_store / core_memory_* tool contracts
+│   ├── test_trace_events.py       # span_event factory contract (span_id, parent_span_id, kinds)
+│   ├── test_trace_store.py        # SQLite-backed trace persistence + 7-day cleanup
+│   ├── test_session_debugger.py   # REST /api/sessions/{id}/trace + create_app wiring
+│   ├── test_session.py            # Session buffer + compaction
 │   ├── test_telegram.py           # Telegram adapter (mocked webhook)
 │   ├── test_cron.py               # Scheduler, job persistence, timezone handling
+│   ├── test_cron_tools.py         # cron_create / cron_list / cron_delete tool contracts
+│   ├── test_cron_integration.py   # End-to-end cron fire → queue
 │   ├── test_gateway.py            # FastAPI routes, auth, rate limiting
-│   └── test_integration.py        # Full message → plan → execute → memory flow
+│   └── test_integration.py        # Full flow: primary → tool → subagent → trace store
 ├── pyproject.toml
 └── README.md
 ```
 
 ## Architecture rules
 
-### Agent pattern: planner → executor(s)
+### Agent pattern: primary + subagents-as-tools
 
-- The **planner** is a Pydantic AI `Agent` with `result_type=PlanResult` (Pydantic model) for structured JSON output: `{ intent, reasoning, steps: [{ executor, instruction }] }`. Uses Claude Sonnet, temperature 0.3. It never calls tools directly.
-- **Executors** are Pydantic AI `Agent` instances, each with their own model string, system prompt, and registered tools. Pydantic AI handles the ReAct loop internally — tool calls, result injection, and iteration. Max iterations configurable via `max_retries`.
-- Built-in executors: `general` (Sonnet, all tools), `search` (Sonnet, web_search + scrape), `writer` (Haiku, memory_read), `digest` (Haiku, search + memory tools).
-- All agents are config-driven. Adding an executor = adding a JSON block in `config.json` + a prompt file in `prompts/`. The `llm/provider.py` factory creates the right Pydantic AI model instance from the config model string.
+- The **primary** is a single Pydantic AI `Agent` that holds the whole conversation. It owns the full context for a turn, reads skills, calls tools directly, and decides when to delegate. Defaults to Claude Sonnet. The ReAct loop is handled internally by Pydantic AI (tool call → result → next step → done) bounded by `UsageLimits` (`request_limit`, `total_tokens_limit`, `tool_calls_limit`).
+- **Subagents** (`deep_research`, `draft_longform`) are independent Pydantic AI agents with their own model string, system prompt, output type, and narrow tool allowlist. They are exposed to the primary as `@agent.tool` wrappers (see `kore/agents/subagents/`). Each call runs in an isolated context and returns a compressed result (`ResearchReport` or draft text). `ctx.usage` is propagated so subagent token usage counts against the primary's budget.
+- Subagent failures are caught at the tool boundary and returned as `"Subagent failed: ..."` strings so the primary can recover without crashing the turn.
+- Everything is config-driven. Adding a subagent = adding a `subagents.<name>` block in `config.json` + a prompt file in `prompts/` + wiring an `@agent.tool` in `primary.py`. The `llm/provider.py` factory creates the right Pydantic AI model instance from the config model string.
+- Cron/API/Telegram messages all fire through the primary by default — there is no orchestrator routing layer. Scheduled known pipelines are planned as deterministic `kore/workflows/` functions (sub-project 2, not yet implemented).
 
 ### Memory system: three layers
 
@@ -210,7 +213,7 @@ kore/
 
 - Custom asyncio timer loop using `croniter` for cron expression parsing. No APScheduler.
 - **`jobs.json`** (`~/.kore/jobs.json`) is the authoritative job store — survives restarts, no SQLite dependency.
-- **Dynamic jobs** created by the agent at runtime via `cron_create(schedule, prompt, executor)` tool. The `channel` parameter was removed; jobs fire as `source=telegram`.
+- **Dynamic jobs** created by the primary at runtime via the `cron_create(schedule, prompt)` tool. The `executor` parameter was removed in v2 — all fired jobs go through the primary. Legacy `executor` fields in existing `jobs.json` files are logged as a warning and ignored by `_job_from_dict`.
 - `cron_list` and `cron_delete` tools for agent-managed job lifecycle.
 - Also hosts the memory consolidation timer (every 30 min).
 - When a job fires, it injects a Message with `source: "cron"` into the gateway queue.
@@ -243,33 +246,33 @@ When asked to research a topic:
 - **Level 2 — Always-on:** Skills with `"always": true` in metadata have full body loaded every turn. Use sparingly (only memory-management in v1).
 - **Level 3 — On-demand:** Agent reads full SKILL.md via `read_file` when relevant, based on Level 1 summary.
 
-**Per-executor skill assignment:** Each executor's config specifies which skills it loads. The `search` executor loads `web-research`, the `writer` loads `content-writer`, etc. The `general` executor loads all skills.
+**Per-agent skill assignment:** Each agent's config (primary + each subagent) lists which skills it loads. The primary typically gets `["*"]` (all skills); subagents get a narrow list matched to their purpose (e.g., `deep_research` loads `search-topic-online`, `draft_longform` loads `content-writer`).
 
 **Discovery precedence:** User skills (`data/skills/`) override built-in skills (`skills/`). ClawHub-installed skills go to `data/skills/`.
 
 **ClawHub integration:** The `clawhub.py` client can search, install, and update skills from ClawHub (13,000+ community skills). Skills install as directories into `data/skills/`. Dependency checking validates required tools/bins/env vars before activation.
 
-**Hot-reload after install:** When a skill is installed via ClawHub (or manually dropped into `data/skills/`), the skill registry auto-reloads: re-scans directories, runs dependency checks, rebuilds the Level 1 summary XML. The new skill is immediately available to executors with wildcard `"skills": ["*"]` (i.e., the `general` executor) — no restart required. Executors with explicit skill lists only see new skills after a config update. This enables a single-session flow: user says "install the git-manager skill and use it" → ClawHub downloads → registry reloads → agent uses the skill immediately.
+**Hot-reload after install:** When a skill is installed via ClawHub (or manually dropped into `data/skills/`), the skill registry auto-reloads: re-scans directories, runs dependency checks, rebuilds the Level 1 summary XML. The new skill is immediately available to agents with wildcard `"skills": ["*"]` (typically the primary) — no restart required. Agents with explicit skill lists only see new skills after a config update. This enables a single-session flow: user says "install the git-manager skill and use it" → ClawHub downloads → registry reloads → primary uses the skill immediately.
 
-**Skill visibility:** `BaseAgent` has a `skills_loaded: list[str]` attribute (set by `create_executor`) that records the names of skills injected at creation time. The orchestrator emits this list in `executor_start` trace events. Level 3 on-demand skill reads (agent calls `read_file` on a `SKILL.md` path) are also tagged as `skill_read` in `tool_call` trace events.
+**Skill visibility:** The primary agent carries a `_kore_skills_loaded: list[str]` attribute recording skills injected at build time. The orchestrator emits this list in the `primary_start` trace event. Level 3 on-demand skill reads (agent calls `read_file` on a `SKILL.md` path) are also tagged as `skill_read` in `tool_call` trace events.
 
 **v1 built-in skills (implemented):** `search-topic-online`, `content-writer`, `memory-management` (always-on), `skill-creator`, `skill-vetter` (security vetting protocol for skills before install). (`email-management` and `daily-digest` are planned but not yet written.) `summarize` (CLI-based URL/file summarizer, requires `summarize` bin) is a user-installed skill (`data/skills/`).
 
 ### Persona layer (SOUL.md / USER.md)
 
-Two Markdown files in `~/.kore/` are injected into every executor's system prompt at creation time (before the executor's own prompt):
+Two Markdown files in `~/.kore/` are injected into the primary's system prompt at build time (before the primary's own prompt):
 
 - **`SOUL.md`** — agent personality: tone, communication style, values, anti-patterns to avoid.
 - **`USER.md`** — user profile: name, timezone, role, current projects, priorities.
 
-`create_executor()` calls `_load_persona(kore_home)` which reads both files, joins them with `---`, and prepends the result to the executor's system prompt. Missing files are silently skipped. `kore init` creates stub versions of both. These files are local config (not in the repo).
+`build_primary()` calls `_load_persona(kore_home)` which reads both files, joins them with `---`, and prepends the result to the primary's system prompt. Missing files are silently skipped. `kore init` creates stub versions of both. These files are local config (not in the repo). Subagents do not receive the persona — they run in their own isolated context with narrow system prompts.
 
 ### Tools
 
-- Tools are Python functions decorated with Pydantic AI's `@agent.tool` decorator. JSON schemas auto-generated from type hints and docstrings.
-- Custom tools in `kore/tools/` are registered to agents via the executor config.
-- v1 tools: `web_search` (Brave Search API — returns `[{title, url, snippet}]`), `scrape_url`, `read_file`, `write_file`, `core_memory_update`, `core_memory_delete`, `memory_search`, `memory_store`, `cron_create`, `cron_list`, `cron_delete`, `get_current_time`, `skill_search` (search ClawHub for skills), `read_skill` (load assigned skill body — scoped to executor's `allowed_skill_names`), `skill_install` (install skill from ClawHub + auto-reload registry), `run_shell` (sandboxed shell — only binaries in executor's `shell_allowlist` may run).
-- Tool access per executor follows least privilege (configured in `config.json`).
+- Tools are Python functions registered in `kore/tools/registry.py` and attached to agents as Pydantic AI `@agent.tool` callables. JSON schemas auto-generated from type hints and docstrings.
+- Each agent (primary + each subagent) declares its allowed tools in `config.json`. `get_tools(["*"])` expands to every registered tool (sorted by name).
+- v1 tools: `web_search` (Brave Search API — returns `[{title, url, snippet}]`), `scrape_url`, `read_file`, `write_file`, `core_memory_update`, `core_memory_delete`, `memory_search`, `memory_store`, `cron_create`, `cron_list`, `cron_delete`, `get_current_time`, `skill_search` (search ClawHub for skills), `read_skill` (load assigned skill body — scoped to the agent's `allowed_skill_names`), `skill_install` (install skill from ClawHub + auto-reload registry), `run_shell` (sandboxed shell — only binaries in the agent's `shell_allowlist` may run).
+- Tool access per agent follows least privilege (configured in `config.json`). Subagents should enumerate an explicit allowlist; the primary defaults to wildcard.
 - Skills reference tools by name — the agent reads skill instructions and calls the appropriate tools.
 
 ### LLM abstraction (Pydantic AI)
@@ -279,17 +282,21 @@ Pydantic AI is the LLM abstraction layer. It wraps native SDKs (Anthropic, OpenA
 ```python
 from pydantic_ai import Agent, RunContext
 
-planner = Agent(
+primary = Agent(
     'anthropic:claude-sonnet-4-6',
-    system_prompt="You are a task planner...",
-    result_type=PlanResult,  # Pydantic model for structured output
+    system_prompt="You are Kore, a personal AI assistant...",
+    tools=[...],          # registered tools (see kore/tools/registry.py)
+    output_type=str,
+    deps_type=KoreDeps,
 )
 
-@planner.tool
-async def memory_search(ctx: RunContext, query: str, max_results: int = 10) -> str:
+@primary.tool
+async def memory_search(ctx: RunContext[KoreDeps], query: str, max_results: int = 10) -> str:
     """Search the event log for relevant memories."""
-    return await ctx.deps.memory.search(query, max_results)
+    return await ctx.deps.retriever.search(query, max_results)
 ```
+
+Subagents are built the same way (see `kore/agents/subagents/`) with an `output_type` like `ResearchReport` and their own narrow tool list; `make_deep_research_tool` / `make_draft_longform_tool` wrap them as `@agent.tool` callables registered on the primary.
 
 **Provider switching** is a config change — `'anthropic:claude-sonnet-4-6'` → `'openai:gpt-4o'` → `'openrouter:anthropic/claude-sonnet-4-6'` → `'ollama:qwen3:8b'`. No code changes. Pydantic AI handles format translation (tool schemas, messages, responses) automatically.
 
@@ -301,7 +308,7 @@ async def memory_search(ctx: RunContext, query: str, max_results: int = 10) -> s
 - **Async everywhere.** All I/O (LLM calls, DB, HTTP, Telegram) uses asyncio. No sync blocking in the main loop.
 - **Pydantic for config.** `config.py` validates `config.json` using Pydantic v2 models. API keys are never in config — only env var names with `_env` suffix.
 - **System prompts in Markdown files.** `prompts/*.md` — editable without code changes.
-- **Shell execution is allowlisted.** `run_shell` exists but each executor declares which binaries it may run via `shell_allowlist` in config. Default is empty (no shell access). File I/O sandboxed to `~/.kore/files/`.
+- **Shell execution is allowlisted.** `run_shell` exists but each agent declares which binaries it may run via `shell_allowlist` in config. Default is empty (no shell access). File I/O sandboxed to `~/.kore/files/`.
 - **Structured logging.** JSON-formatted logs, filterable by agent/level.
 - **Type hints on everything.** Use `from __future__ import annotations` in all files.
 
@@ -322,11 +329,11 @@ async def memory_search(ctx: RunContext, query: str, max_results: int = 10) -> s
 |-----------|-----------|
 | **Config** | Valid config loads, missing required fields fail, env var resolution, Pydantic validation |
 | **Agents / LLM** | Agent creation from config, model string resolution, tool registration, `TestModel` structured output, `FallbackModel` failover |
-| **Skills** | SKILL.md parsing (frontmatter + body), discovery precedence (user overrides built-in), dependency checking (tools, bins, env), per-executor mapping, always-on loading, ClawHub search/install mock, **hot-reload after install** (registry picks up new skill, summary XML rebuilt, wildcard executors see it), `skill_search`/`skill_install` tools, `skills_loaded` on BaseAgent, `skill_read` tag in tool_call trace events |
-| **Tools** | Type hint → JSON schema generation, tool execution, error handling, access filtering per executor |
-| **Planner** | Intent classification → correct executor selection, structured `PlanResult` output, fallback to `general` executor |
-| **Executor** | Tool call → result → next step → done via Pydantic AI run loop, tool error handling |
-| **Orchestrator** | Full pipeline: message → planner → executor → response, memory context injection |
+| **Skills** | SKILL.md parsing (frontmatter + body), discovery precedence (user overrides built-in), dependency checking (tools, bins, env), per-agent mapping, always-on loading, ClawHub search/install mock, **hot-reload after install** (registry picks up new skill, summary XML rebuilt, wildcard agents see it), `skill_search`/`skill_install` tools, `_kore_skills_loaded` on the primary, `skill_read` tag in tool_call trace events |
+| **Tools** | Type hint → JSON schema generation, tool execution, error handling, access filtering per agent, wildcard expansion |
+| **Primary** | Build from config (skills, tools, subagents wired as `@agent.tool`), current-time system prompt injected dynamically, `UsageLimits` applied per run |
+| **Subagents** | Build from config (narrow tool allowlist, structured output type), wrapper catches exceptions → "Subagent failed: ..." string, propagates `ctx.usage` |
+| **Orchestrator** | Single primary turn emits span-shaped trace events (`session_start` → `primary_start` → tool/subagent spans → `primary_done` → `session_done`), core-memory prefix injection, best-effort post-extraction |
 | **Core memory** | CRUD operations, 4K token cap enforcement, invalid path handling |
 | **Event log** | Insert events, FTS5 keyword search, sqlite-vec vector search, hybrid score fusion |
 | **Retrieval** | Temporal decay calculation, BM25+vector merge, min_score filtering, top-K ranking |
@@ -335,10 +342,10 @@ async def memory_search(ctx: RunContext, query: str, max_results: int = 10) -> s
 | **Telegram** | Message normalization, chunking (>4096 chars), allowed_user_ids filtering, command parsing |
 | **CRON** | Job scheduling, timezone handling (DST), job persistence across restart, consolidation timer, **dynamic job creation/deletion via tools**, cron expression validation |
 | **Gateway** | Route responses, auth enforcement, rate limiting, WebSocket connection, `GET /api/skills` (builtin/user split, active/missing computation, reload-on-request, null registry fallback) |
-| **Integration** | Full flow: Telegram message → gateway → planner → executor → tools → memory → response |
+| **Integration** | Full flow: Telegram message → gateway → primary → tools/subagents → memory → response, with trace ordering and subagent query propagation asserted end-to-end |
 
 ### Testing patterns
-- **Use Pydantic AI's `TestModel` for agent tests.** `TestModel` returns structured responses, records tool calls, and requires no API keys. This is the primary mocking strategy for all agent/planner/executor tests.
+- **Use Pydantic AI's `TestModel` for agent tests.** `TestModel` returns structured responses, records tool calls, and requires no API keys. This is the default mocking strategy for all primary and subagent tests. Pass `call_tools=[]` when you want to test prompt/output without triggering registered tools.
 - **Use `respx` for external HTTP calls.** Mock Brave Search, URL scraping, Telegram webhook — but NOT the LLM (that's `TestModel`'s job).
 - **Mock external services, not internal modules.** Never mock the tool registry, memory retrieval, or agent orchestration logic.
 - **Test memory in isolation and in integration.** Unit tests verify each memory layer independently. Integration tests verify the full flow: conversation → extraction → event store → retrieval → core memory promotion via consolidation.
@@ -375,22 +382,20 @@ OPENAI_API_KEY=...             # OpenAI models or OpenRouter (300+ models)
 
 **Runtime config location.** The operational config lives at `~/.kore/config.json` on the host and is mounted into the gateway container at `/root/.kore/config.json` via `docker-compose.yml` (volume `~/.kore:/root/.kore`). There is **no `config.json` in the repo** — edits for a deployed instance go to `~/.kore/config.json`. Back it up (`cp ~/.kore/config.json ~/.kore/config.json.bak`) before any schema change; `load_config()` raises `ConfigError` with a migration pointer when it sees removed v1 keys (`agents.planner` / `agents.executors`). After editing, `docker compose restart gateway` is enough unless code also changed.
 
-**Wildcard gotcha.** `tools.registry.get_tools` does NOT expand `"*"` — `get_tools(["*"])` raises `KeyError`. `PrimaryAgentConfig.tools` defaults to `["*"]` but that default is a latent bug: configs and tests must enumerate tool names explicitly (e.g. `["web_search", "scrape_url", ...]`). Skills lists *do* accept `["*"]` (handled by `skill_registry.get_skills_for_executor`).
+**Tool list wildcard.** `tools.registry.get_tools(["*"])` expands to every registered tool (sorted by name). Mixing `"*"` with explicit names raises `ValueError` — keep the list homogeneous. `PrimaryAgentConfig.tools` defaults to `["*"]`, so omitting `tools` grants the primary full access; subagents should enumerate an explicit allowlist for least privilege. Skills lists also accept `["*"]` (handled by `skill_registry.get_skills_for_executor`).
 
-## Planned architecture refactor (v2 — in brainstorming)
+## v2 roadmap
 
-The current planner → executor(s) pipeline is "the weakest variant of prompt chaining" (Anthropic/Cognition/MAST taxonomy): each executor sees only the previous step's output, not the plan or cumulative context. For a conversational personal assistant this causes telephone-game context loss and silent quality degradation. A source document captures the full critique at `/Users/ulysse/Downloads/compass_artifact_wf-d9314a40-3278-4a98-9793-1dec9fbcef0a_text_markdown.md`.
+The legacy planner → executor(s) pipeline was "the weakest variant of prompt chaining" (Anthropic/Cognition/MAST taxonomy) — each executor only saw the previous step's output, causing telephone-game context loss. The v2 target is **one conversational primary agent + skills + on-demand subagent delegation + sleep-time consolidator** (per Anthropic Agent Skills / LangChain subagents-pattern / Letta sleep-time pattern). The three-layer memory and SKILL.md system stay — only the orchestration layer changes.
 
-Target architecture: **one conversational primary agent + skills + on-demand subagent delegation + sleep-time consolidator** (per Anthropic Agent Skills / LangChain subagents-pattern / Letta sleep-time pattern). The three-layer memory and SKILL.md system stay — only the orchestration layer above them changes.
+The work is decomposed into four sub-projects:
 
-The work is decomposed into four sub-projects, each with its own spec and plan:
-
-1. **Primary-agent refactor (critical path).** Delete planner + non-general executors. Replace with one `primary` agent running a single Pydantic AI loop per turn. Convert `search` and `writer` into `@agent.tool` subagents (`deep_research`, `draft_longform`) that return compressed results. Rework config schema, trace events, UI trace grouping. Add `UsageLimits` safety net (`request_limit`, `total_tokens_limit`, `tool_calls_limit`).
-2. **Workflows for scheduled/known pipelines.** Extract `digest` executor (and future email-classification/daily-digest) into deterministic `kore/workflows/` Python functions that call a single agent run at compose time. Cron jobs fire prompts through the primary by default; workflows are opt-in for known pipelines.
+1. ~~**Primary-agent refactor (critical path).** Replace planner + executors with one `primary` agent and `deep_research`/`draft_longform` subagents exposed as `@agent.tool`. Rework config schema, trace events, UI trace grouping. Add `UsageLimits` safety net.~~ **DONE** (merged in PR #5).
+2. **Workflows for scheduled/known pipelines.** Extract the old `digest` path (and future email-classification/daily-digest) into deterministic `kore/workflows/` Python functions that call a single agent run at compose time. Cron jobs currently fire prompts through the primary; workflows will be opt-in for known pipelines.
 3. **Sleep-time consolidator hardening.** Audit `memory/consolidation.py` for idle-time scheduling, race safety, and Generative-Agents-style reflection (rewriting core-memory blocks from raw observations).
 4. **Observability upgrade.** Add `logfire.instrument_pydantic_ai()` + FastAPI/SQLAlchemy/httpx instrumentation. Decide whether to fold custom `trace_store` into OTEL spans or keep both (OTEL for depth, trace_store for the UI).
 
-Sub-project 1 is the gravity well — 2–4 can happen in any order after. Each goes through brainstorming → spec → plan → implementation as a separate cycle.
+Sub-projects 2–4 are independent and can happen in any order. Each goes through brainstorming → spec → plan → implementation as a separate cycle.
 
 ## What is NOT in v1
 

@@ -9,6 +9,7 @@ from typing import Any
 from pydantic_ai import Agent, RunContext, UsageLimits
 
 from kore.agents.deps import KoreDeps
+from kore.agents.system_prompts import current_time_fragment
 from kore.config import KoreConfig, SubAgentConfig
 from kore.llm.provider import get_model
 from kore.llm.types import ResearchReport
@@ -66,6 +67,7 @@ def build_deep_research_agent(
         retries=config.max_retries,
         deps_type=KoreDeps,
     )
+    agent.system_prompt(current_time_fragment)
     return agent
 
 

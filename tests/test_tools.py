@@ -29,6 +29,22 @@ def test_registry_known_tools_returns_callables():
     assert all(callable(t) for t in tools)
 
 
+def test_registry_wildcard_returns_all_tools():
+    import kore.tools.time_tool   # noqa: F401
+    import kore.tools.scrape      # noqa: F401
+    import kore.tools.web_search  # noqa: F401
+
+    tools = get_tools(["*"])
+    registered = all_tools()
+    assert len(tools) == len(registered)
+    assert set(tools) == set(registered.values())
+
+
+def test_registry_wildcard_rejects_mixed_names():
+    with pytest.raises(ValueError, match="Wildcard"):
+        get_tools(["*", "get_current_time"])
+
+
 # --- get_current_time ---
 
 @pytest.mark.asyncio

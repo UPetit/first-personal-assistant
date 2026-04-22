@@ -94,8 +94,7 @@ def test_add_job_fields_in_json(tmp_path):
     assert job["schedule"] == "0 8 * * *"
     assert job["prompt"] == "Morning check"
     assert job["source"] == "ui"
-    # executor remains on the dataclass for legacy jobs.json compat, defaulting to "general"
-    assert job["executor"] == "general"
+    assert "executor" not in job
     assert job["enabled"] is True
     assert job["next_run_at"] is not None
     assert "tz" in job
@@ -173,7 +172,7 @@ def test_list_jobs_returns_correct_fields(tmp_path):
     assert j["schedule"] == "0 8 * * *"
     assert j["prompt"] == "Morning"
     assert j["source"] == "telegram"
-    assert j["executor"] == "general"
+    assert "executor" not in j
     assert "next_run_at" in j
     assert "last_run_at" in j
     assert "last_status" in j

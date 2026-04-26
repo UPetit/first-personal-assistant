@@ -1,21 +1,22 @@
-# kore-ai
-Your personal AI core. Extensible, self-hosted, Python-first.
+# first-personal-assistant
+
+**Kore** — your personal AI assistant. Extensible, self-hosted, Python-first.
+
+Kore is a single conversational agent that runs over Telegram, remembers context across days and weeks via a three-layer memory system, runs scheduled tasks via CRON, and delegates narrow work (web research, long-form drafting) to two on-demand subagents. It uses [Pydantic AI](https://ai.pydantic.dev) under the hood, so swapping between Anthropic Claude (default), OpenAI, OpenRouter, and Ollama is a single config change.
+
+For architecture, conventions, and the v2 sub-project roadmap, see [CLAUDE.md](./CLAUDE.md).
 
 ## Running with Docker (recommended)
 
-**First-time setup** — initialise the `~/.kore` data directory and create a starter `config.json`:
+**First-time setup** — initialise the `~/.kore/` data directory and create starter config files:
 
 ```bash
 docker compose run --rm gateway init
 ```
 
-Then copy and fill in your environment variables:
+This creates `~/.kore/config.json`, `~/.kore/SOUL.md`, `~/.kore/USER.md`, and `~/.kore/data/jobs.json`.
 
-```bash
-cp .env.example ~/.kore/.env   # or create ~/.kore/.env manually
-```
-
-Minimal `~/.kore/.env`:
+Create your secrets file at `~/.kore/.env`:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
@@ -60,17 +61,16 @@ docker compose up -d ui
 # Install dependencies
 pip install -e ".[dev]"
 
-# Copy and fill in secrets
-cp .env.example ~/.kore/.env
+# Initialise data directory (creates ~/.kore/ with starter files)
+python -m kore.main init
 
-# Initialise data directory
-python -m kore init
+# Create ~/.kore/.env with your API keys (see Docker section for required vars)
 
 # Apply any pending data migrations
-python -m kore migrate
+python -m kore.main migrate
 
 # Start the gateway (FastAPI + scheduler + Telegram webhook)
-python -m kore gateway
+python -m kore.main gateway
 ```
 
 The API is available at `http://localhost:8000`.
@@ -97,6 +97,17 @@ npm run build        # outputs to src/kore/ui/static/
 ```
 
 After building, the dashboard is served directly by FastAPI at `http://localhost:8000`.
+
+---
+
+## Customising Kore
+
+Two Markdown files in `~/.kore/` shape Kore's behaviour and what it knows about you:
+
+- **`~/.kore/SOUL.md`** — Kore's personality (tone, values, anti-patterns). Created as a stub by `init`.
+- **`~/.kore/USER.md`** — your profile (name, timezone, role, current projects). Created as a stub by `init`.
+
+Both files are prepended to every agent's system prompt at build time. Edit and restart the gateway to apply changes.
 
 ---
 
